@@ -48,10 +48,10 @@ namespace {
         int l1_idx{};
         dataObjInfo_t* obj_info{};
         for(const auto& l1 : L1desc) {
-            if(l1.inuseFlag != FD_INUSE) {
+            if(FD_INUSE != l1.inuseFlag) {
                 continue;
             }
-            if(!strcmp(l1.dataObjInp->objPath, l1.dataObjInp->objPath)) {
+            if(!strcmp(l1.dataObjInp->objPath, _inp->objPath)) {
                 obj_info = l1.dataObjInfo;
                 l1_idx = &l1 - L1desc;
             }
@@ -139,32 +139,8 @@ namespace {
                     _rei->rsComm->clientUser.userName,
                     source_resource);
             }
-            else if("pep_api_data_obj_open_post" == _rn) {
-                auto it = _args.begin();
-                std::advance(it, 2);
-                if(_args.end() == it) {
-                    THROW(
-                        SYS_INVALID_INPUT_PARAM,
-                        "invalid number of arguments");
-                }
-
-                auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
-                if(obj_inp->openFlags & O_WRONLY || obj_inp->openFlags & O_RDWR) {
-                    int l1_idx{};
-                    std::string resource_name;
-                    try {
-                        std::tie(l1_idx, resource_name) = get_index_and_resource(obj_inp);
-                        opened_objects[l1_idx] = std::tie(obj_inp->objPath, resource_name);
-                    }
-                    catch(const irods::exception& _e) {
-                        rodsLog(
-                           LOG_ERROR,
-                           "get_index_and_resource failed for [%s]",
-                           obj_inp->objPath);
-                    }
-                }
-            }
-            else if("pep_api_data_obj_create_post" == _rn) {
+            else if("pep_api_data_obj_open_post"   == _rn ||
+                    "pep_api_data_obj_create_post" == _rn) {
                 auto it = _args.begin();
                 std::advance(it, 2);
                 if(_args.end() == it) {
