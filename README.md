@@ -14,6 +14,14 @@ The `<technology>` in the triple references the indexing technology, currently o
 
 The attribute is configurable within the plugin_specific_configuration for the indexing rule engine plugin.
 
+### Resource Metadata
+
+An administrator may wish to restrict indexing activities to particular resources, for example when automatically ingesting data.  Should a storage resource be at the edge, that resource may not be appropriate for indexing.  In order to indicate a resource is available for indexing it may be annotated with metadata:
+```
+imeta add -R <resource name> irods::indexing::index true
+```
+By default, should no resource be tagged it is assumed that all resources are available for indexing.  Should the tag exist on any resource in the system, it is assumed that all available resources for indexing are tagged.
+
 ### Plugin Settings
 
 There are currently three rule engine plugins to configure for the indexing capability which should be added to the `"rule_engines"` section of `/etc/irods/server_config.json`:
