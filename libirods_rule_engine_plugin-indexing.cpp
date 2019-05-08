@@ -465,7 +465,7 @@ irods::error exec_rule(
         return irods::error(_e);
     }
 
-    return err;
+    return CODE(RULE_ENGINE_CONTINUE);
 
 } // exec_rule
 
