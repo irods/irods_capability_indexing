@@ -1,5 +1,5 @@
 # Motivation
-The iRODS indexing capability provides a policy framework around both full text and metadata indexing for the purposes of enhanced data discovery.  Logical collections are annotated with metadata which indicates that any data objects or nested collecitons of data object should be indexed given a particular indexing technology, index type and index name.
+The iRODS indexing capability provides a policy framework around both full text and metadata indexing for the purposes of enhanced data discovery.  Logical collections are annotated with metadata which indicates that any data objects or nested collections of data object should be indexed given a particular indexing technology, index type and index name.
 
 # Configuration
 ### Collection Metadata
