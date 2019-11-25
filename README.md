@@ -51,7 +51,7 @@ There are currently three rule engine plugins to configure for the indexing capa
             },
         ]
 ```
-The first is the main indexing rule engine plugin, the second is the plugin responsible for implementing the policy for the indexing technology, and the third is responsible for implementing the document type introspection.  Currently the default imply returns `text` as the document type.  This policy can be overridden to call out to services like Tika for a better introspeciton of the data.
+The first is the main indexing rule engine plugin, the second is the plugin responsible for implementing the policy for the indexing technology, and the third is responsible for implementing the document type introspection.  Currently the default imply returns `text` as the document type.  This policy can be overridden to call out to services like Tika for a better introspection of the data.
 
 # Policy Implementation
 
