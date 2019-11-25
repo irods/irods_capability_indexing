@@ -1,5 +1,5 @@
 # Motivation
-The iRODS indexing capability provides a policy framework around both full text and metadata idexing for the purposes of enhanced data discovery.  Logical collections are annotated with metadata which indicates that any data objects or nested collecitons of data object should be indexed given a particular indexing technology, index type and index name.
+The iRODS indexing capability provides a policy framework around both full text and metadata indexing for the purposes of enhanced data discovery.  Logical collections are annotated with metadata which indicates that any data objects or nested collections of data object should be indexed given a particular indexing technology, index type and index name.
 
 # Configuration
 ### Collection Metadata
@@ -12,7 +12,7 @@ Where `<index name>` is an assumed existing index within the given technology, a
 
 The `<technology>` in the triple references the indexing technology, currently only suppored by `elasticsearch`.  This string is used to dynamically build the policy invocations when the indexing policy is triggered in order to delegate the operations to the appropriate rule engine plugin.
 
-The attribute is configurable within the plugin_specific_configuration for the indexing rule engine plugin.
+The attribute is configurable within the `plugin_specific_configuration` for the indexing rule engine plugin.
 
 ### Resource Metadata
 
