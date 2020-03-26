@@ -244,6 +244,9 @@ namespace irods {
                                          _operation_type,
                                          _index_type);
             fsp start_path{_collection_name};
+
+            if (fsvr::collection_iterator{} == fsvr::collection_iterator{comm, start_path}) { return; }
+
             for(auto p : fsvr::recursive_collection_iterator(comm, start_path)) {
                 if(fsvr::is_data_object(comm, p.path())) {
                     try {
@@ -395,6 +398,7 @@ namespace irods {
                 catch(const irods::exception&) {
                 }
 
+                if (0 == coll.compare(coll.root_collection())) { break; }
                 coll = coll.parent_path();
 
             } // while
