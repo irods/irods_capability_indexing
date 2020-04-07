@@ -473,16 +473,16 @@ irods::error start(
     config = std::make_unique<configuration>(_instance_name);
     object_index_policy = irods::indexing::policy::compose_policy_name(
                                irods::indexing::policy::object::index,
-                               "elastic");
+                               "elasticsearch");
     object_purge_policy = irods::indexing::policy::compose_policy_name(
                                irods::indexing::policy::object::purge,
-                               "elastic");
+                               "elasticsearch");
     metadata_index_policy = irods::indexing::policy::compose_policy_name(
                                irods::indexing::policy::metadata::index,
-                               "elastic");
+                               "elasticsearch");
     metadata_purge_policy = irods::indexing::policy::compose_policy_name(
                                irods::indexing::policy::metadata::purge,
-                               "elastic");
+                               "elasticsearch");
 
     elasticlient::setLogFunction(log_fcn);
     return SUCCESS();
