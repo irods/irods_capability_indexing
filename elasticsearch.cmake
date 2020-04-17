@@ -38,7 +38,7 @@ target_include_directories(
     ${IRODS_EXTERNALS_FULLPATH_JSON}/include
     ${IRODS_EXTERNALS_FULLPATH_JANSSON}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    /opt/irods-externals/elasticlient0.1.0-0/include/
+    /opt/irods-externals/elasticlient0.1.0-1/include/
     /opt/irods-externals/cpr1.3.0-0/include/
     )
 
@@ -47,8 +47,8 @@ target_link_libraries(
     PRIVATE
     ${IRODS_PLUGIN_POLICY_LINK_LIBRARIES}
     ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so
-    /opt/irods-externals/elasticlient0.1.0-0/lib/libelasticlient.so
-    /opt/irods-externals/elasticlient0.1.0-0/lib/libjsoncpp.so
+    /opt/irods-externals/elasticlient0.1.0-1/lib/libelasticlient.so
+    /opt/irods-externals/elasticlient0.1.0-1/lib/libjsoncpp.so
     /opt/irods-externals/cpr1.3.0-0/lib/libcpr.so
     irods_common
     )
