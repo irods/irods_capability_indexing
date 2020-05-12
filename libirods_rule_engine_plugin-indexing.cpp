@@ -75,6 +75,8 @@ namespace {
         return std::make_tuple(l1_idx, resource_name);
     } // get_object_path_and_resource
 
+#define NULL_PTR_GUARD(x) ((x) == nullptr ? "" : (x))
+
     void apply_indexing_policy(
         const std::string &    _rn,
         ruleExecInfo_t*        _rei,
@@ -215,11 +217,13 @@ namespace {
                         // was the added tag an indexing indicator
                         if(config->index == attribute) {
                             // verify that this is not new metadata with a query and set a flag
+                            if (!avu_inp->arg3) { THROW( SYS_INVALID_INPUT_PARAM, "empty metadata attribute" ); }
+                            if (!avu_inp->arg4) { THROW( SYS_INVALID_INPUT_PARAM, "empty metadata value" ); }
                             collection_metadata_is_new = !idx.metadata_exists_on_collection(
                                                              object_path,
                                                              avu_inp->arg3,
                                                              avu_inp->arg4,
-                                                             avu_inp->arg5);
+                                                             NULL_PTR_GUARD(avu_inp->arg5));
                         }
                     }
                 }
@@ -237,9 +241,13 @@ namespace {
                 const std::string operation{avu_inp->arg0};
                 const std::string type{avu_inp->arg1};
                 const std::string collection_name{avu_inp->arg2};
-                const std::string attribute{avu_inp->arg3};
-                const std::string value{avu_inp->arg4};
-                const std::string units{avu_inp->arg5};
+
+                if (!avu_inp->arg3) { THROW( SYS_INVALID_INPUT_PARAM, "empty metadata attribute" ); }
+                if (!avu_inp->arg4) { THROW( SYS_INVALID_INPUT_PARAM, "empty metadata value" ); }
+                const std::string attribute{ avu_inp->arg3 };
+                const std::string value{ avu_inp->arg4 };
+                const std::string units{ NULL_PTR_GUARD(avu_inp->arg5) };
+
                 const std::string add{"add"};
                 const std::string set{"set"};
                 const std::string rm{"rm"};
