@@ -310,6 +310,10 @@ namespace {
                 const cpr::Response response = client.remove(_index_name, doc_type, index_id);
                 if(response.status_code != 200) {
                     done = true;
+                    if(response.status_code == 404) { // meaningful for logging
+                        rodsLog (LOG_NOTICE, boost::str(boost::format("elasticlient 404: no index entry for chunk (%d) of object_id '%d' "
+                                                                      "in index '%s'") % chunk_counter % object_id % _index_name).c_str());
+                    }
                 }
             } // while
         }
@@ -318,6 +322,14 @@ namespace {
                 LOG_ERROR,
                 "Exception [%s]",
                 _e.what());
+            THROW(
+                SYS_INTERNAL_ERR,
+                _e.what());
+        }
+        catch(const irods::exception& _e) {
+            if (_e.code() == CAT_NO_ROWS_FOUND) {
+                return;
+            }
             THROW(
                 SYS_INTERNAL_ERR,
                 _e.what());
@@ -385,7 +397,7 @@ namespace {
                     SYS_INTERNAL_ERR,
                     boost::format("failed to index metadata [%s] [%s] [%s] for [%s] code [%d] message [%s]")
                     % _attribute
-                    % _value 
+                    % _value
                     % _unit
                     % _object_path
                     % response.status_code
@@ -431,16 +443,26 @@ namespace {
                                       _value,
                                       _unit)};
             const cpr::Response response = client.remove(_index_name, "text", md_index_id);
-            if(response.status_code != 200 && response.status_code != 201) {
-                THROW(
-                    SYS_INTERNAL_ERR,
-                    boost::format("failed to index metadata [%s] [%s] [%s] for [%s] code [%d] message [%s]")
-                    % _attribute
-                    % _value 
-                    % _unit
-                    % _object_path
-                    % response.status_code
-                    % response.text);
+            switch(response.status_code) {
+                // either the index has been deleted, or the AVU was cleared unexpectedly
+                case 404:
+                    rodsLog (LOG_NOTICE, boost::str(boost::format("elasticlient 404: no index entry for AVU (%s,%s,%s) on object '%s' in "
+                                                        "index '%s'") % _attribute % _value % _unit % _object_path % _index_name).c_str());
+                    break;
+                // routinely expected return codes ( not logged ):
+                case 200: break;
+                case 201: break;
+                // unexpected return codes:
+                default:
+                    THROW(
+                        SYS_INTERNAL_ERR,
+                        boost::format("failed to index metadata [%s] [%s] [%s] for [%s] code [%d] message [%s]")
+                        % _attribute
+                        % _value
+                        % _unit
+                        % _object_path
+                        % response.status_code
+                        % response.text);
             }
         }
         catch(const std::runtime_error& _e) {
