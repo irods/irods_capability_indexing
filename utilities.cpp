@@ -64,5 +64,6 @@ namespace irods {
             }
 
         } // invoke_policy
+       
     } // namespace indexing
 } // namespace irods
