@@ -227,6 +227,29 @@ namespace irods {
             return std::make_tuple(index_name, index_type);
         }
 
+        void indexer::schedule_metadata_purge_for_recursive_rm_coll( const std::string& logical_path) {
+
+                            rodsLog(LOG_NOTICE,"path [%s] for rm coll recursive avu removal",
+                                logical_path.c_str()
+                            );
+
+                            schedule_policy_event_for_object(
+                                /*policy_name, */ "irods_policy_recursive_rm_coll_avus",
+                                logical_path,
+                                /*_user_name,*/ "",
+                                EMPTY_RESOURCE_NAME,
+                                /*_indexer, */    "elasticsearch",
+                                /*_index_name, */ "",
+                                /*_index_type, */ "metadata",
+                                generate_delay_execution_parameters());
+        }
+
+        /*
+        == ////  void indexer::schedule_policy_events_for_collection  ////
+        == Starting at _collection_name , recurse over every sub-element of the tree
+        == (including data objects and collections and starting with the root).
+        == Call schedule_policy_event_for_object for every object or collection
+         */
         void indexer::schedule_policy_events_for_collection(
             const std::string& _operation_type,
             const std::string& _collection_name,
@@ -245,34 +268,53 @@ namespace irods {
                                          _index_type);
             fsp start_path{_collection_name};
 
-            if (fsvr::collection_iterator{} == fsvr::collection_iterator{comm, start_path}) { return; }
+            auto iter_end = fsvr::recursive_collection_iterator{};
+            auto iter =  fsvr::recursive_collection_iterator{comm, start_path};
 
-            for(auto p : fsvr::recursive_collection_iterator(comm, start_path)) {
-                if(fsvr::is_data_object(comm, p.path())) {
+            for (auto path = start_path; ; ++iter) {
+                const auto s = fsvr::status(comm,path);
+                bool is_collection = fsvr::is_collection(s);
+                bool is_data_object = fsvr::is_data_object(s);
+                if (is_data_object || is_collection) {
                     try {
-                        std::string resc_name = get_indexing_resource_name_for_object(
-                                                   p.path().string(),
-                                                   indexing_resources); 
-                        schedule_policy_event_for_object(
-                            policy_name,
-                            p.path().string(),
-                            _user_name,
-                            EMPTY_RESOURCE_NAME,
-                            _indexer,
-                            _index_name,
-                            _index_type,
-                            generate_delay_execution_parameters());
+                        std::string resc_name;
+                        if (is_data_object) {
+                            resc_name = get_indexing_resource_name_for_object(
+                                                   path.string(),
+                                                   indexing_resources);
+                        }
+                        if ( ! (is_collection && _index_type == "full_text" )) {
+
+                            schedule_policy_event_for_object(
+                                policy_name,
+                                path.string(),
+                                _user_name,
+                                EMPTY_RESOURCE_NAME,
+                                _indexer,
+                                _index_name,
+                                _index_type,
+                                generate_delay_execution_parameters());
+                        }
                     }
                     catch(const exception& _e) {
                         rodsLog(
                             LOG_ERROR,
                             "failed to find indexing resource for object [%s]",
-                            p.path().string().c_str());
+                            path.string().c_str());
                     }
-                } // if data object
+                    if (iter != iter_end) { path = iter->path(); }
+                                     else { break; }
+                } // if collection or data object
             } // for path
         } // schedule_policy_events_for_collection
 
+        /*
+        == ////  void indexer::schedule_{INDEX-TYPE}_{INDEX-EVENT}_event ////
+        ==  for combinations of INDEX-TYPE => ( full_text, metadata )
+        ==                  and EVENT      => ( indexing, purge )
+        ==
+        ==  Calls schedule_policy_events_given_object_path(...) for the target path
+        */
         void indexer::schedule_full_text_indexing_event(
             const std::string& _object_path,
             const std::string& _user_name,
@@ -319,7 +361,8 @@ namespace irods {
             const std::string& _user_name,
             const std::string& _attribute,
             const std::string& _value,
-            const std::string& _units) {
+            const std::string& _units,
+            const std::string& opt_id) {
 
             schedule_policy_events_given_object_path(
                 irods::indexing::operation_type::purge,
@@ -329,9 +372,16 @@ namespace irods {
                 EMPTY_RESOURCE_NAME,
                 _attribute,
                 _value,
-                _units);
+                _units,
+                opt_id  );  // non-empty if an ID for the deleted object or collection is needed in the task
 
         } // schedule_metadata_purge_event
+
+        /*
+        == //// void indexer::schedule_policy_events_given_object_path ////
+        == Given an object path (data object or collection) and an operation name
+        == recurse  upward to find the indices for which policy events must be scheduled
+         */
 
         void indexer::schedule_policy_events_given_object_path(
             const std::string& _operation_type,
@@ -341,25 +391,33 @@ namespace irods {
             const std::string& _source_resource,
             const std::string& _attribute,
             const std::string& _value,
-            const std::string& _units) {
-            using fsp = irods::experimental::filesystem::path;
+            const std::string& _units,
+            const std::string& _opt_ID ) {
 
-            const auto indexing_resources = get_indexing_resource_names();
-            if(!resource_is_indexable(_source_resource, indexing_resources)) {
-                rodsLog(
-                    LOG_ERROR,
-                    "resource [%s] is not indexable for object [%s]",
-                    _source_resource.c_str(),
-                    _object_path.c_str());
-                return;
+            using fsp = irods::experimental::filesystem::path;
+            namespace fsvr = irods::experimental::filesystem::server;
+            auto is_data_object = false;
+            fsp full_path{_object_path};
+
+            const auto s = fsvr::status(*rei_->rsComm,full_path);
+            if (fsvr::is_data_object(s)) {
+                is_data_object = true;
+                const auto indexing_resources = get_indexing_resource_names();
+                if(!resource_is_indexable(_source_resource, indexing_resources)) {
+                    rodsLog(
+                        LOG_ERROR,
+                        "resource [%s] is not indexable for object [%s]",
+                        _source_resource.c_str(),
+                        _object_path.c_str());
+                    return;
+                }
             }
 
             std::vector<std::string> processed_indicies;
-            fsp full_path{_object_path};
-            auto coll = full_path.parent_path();
+            auto coll = (is_data_object ? full_path.parent_path() : full_path);
             while(!coll.empty()) {
                 try {
-                    auto metadata = 
+                    auto metadata =
                         get_metadata_for_collection(
                             coll.string(),
                             config_.index);
@@ -390,7 +448,8 @@ namespace irods {
                                 generate_delay_execution_parameters(),
                                 _attribute,
                                 _value,
-                                _units);
+                                _units,
+                                _opt_ID);
                             processed_indicies.push_back(index_name+index_type);
                         }
                     } // for row
@@ -506,12 +565,14 @@ namespace irods {
             const std::string& _data_movement_params,
             const std::string& _attribute,
             const std::string& _value,
-            const std::string& _units) {
+            const std::string& _units,
+            const std::string& obj_optional_ID) {
             using json = nlohmann::json;
+            rodsLog(LOG_NOTICE, "delay-schedule policy evt for obj path ['%s'] id [%s]", _object_path.c_str() , obj_optional_ID.c_str());
             json rule_obj;
             rule_obj["rule-engine-operation"]     = _event;
             rule_obj["rule-engine-instance-name"] = config_.instance_name_;
-            rule_obj["object-path"]               = _object_path;
+            rule_obj["object-path"]               = obj_optional_ID.empty() ? _object_path : obj_optional_ID;
             rule_obj["user-name"]                 = _user_name;
             rule_obj["indexer"]                   = _indexer;
             rule_obj["index-name"]                = _index_name;
