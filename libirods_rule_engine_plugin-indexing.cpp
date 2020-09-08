@@ -7,6 +7,8 @@
 #include "irods_resource_backport.hpp"
 #include "irods_query.hpp"
 #include "rsModAVUMetadata.hpp"
+#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#include "filesystem.hpp"
 
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
@@ -18,6 +20,7 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <tuple>
 #include <string>
 
 // =-=-=-=-=-=-=-
@@ -39,9 +42,19 @@ int _delayExec(
     ruleExecInfo_t *rei );
 
 namespace {
+
     bool collection_metadata_is_new = false;
     std::unique_ptr<irods::indexing::configuration>     config;
     std::map<int, std::tuple<std::string, std::string>> opened_objects;
+
+    std::map < std::string,
+               std::vector < std::tuple < std::string, // id of   (sub-)coll
+                                          std::string, // path of (sub-)coll
+                                          std::string, /*A*/
+                                          std::string, /*V*/
+                                          std::string  /*U*/ >>> avus_to_purge;
+
+    const char* rm_coll_force_kw = "*";
 
     std::tuple<int, std::string>
     get_index_and_resource(const dataObjInp_t* _inp) {
@@ -96,6 +109,7 @@ namespace {
 
                 auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
                 object_path = obj_inp->objPath;
+
                 const char* resc_hier = getValByKey(
                                             &obj_inp->condInput,
                                             RESC_HIER_STR_KW);
@@ -240,7 +254,7 @@ namespace {
                 const auto avu_inp = boost::any_cast<modAVUMetadataInp_t*>(*it);
                 const std::string operation{avu_inp->arg0};
                 const std::string type{avu_inp->arg1};
-                const std::string collection_name{avu_inp->arg2};
+                const std::string logical_path{avu_inp->arg2};
 
                 if (!avu_inp->arg3) { THROW( SYS_INVALID_INPUT_PARAM, "empty metadata attribute" ); }
                 if (!avu_inp->arg4) { THROW( SYS_INVALID_INPUT_PARAM, "empty metadata value" ); }
@@ -251,6 +265,7 @@ namespace {
                 const std::string add{"add"};
                 const std::string set{"set"};
                 const std::string rm{"rm"};
+                const std::string rmw{"rmw"}; // yet to be implemented; AVU args are "like" patterns to be used in a genquery
                 const std::string collection{"-C"};
                 const std::string data_object{"-d"};
 
@@ -263,17 +278,18 @@ namespace {
                             // schedule a possible purge of all indexed data in collection
                             idx.schedule_collection_operation(
                                 irods::indexing::operation_type::purge,
-                                collection_name,
+                                logical_path,
                                 _rei->rsComm->clientUser.userName,
                                 value,
                                 units);
                         }
                     }
-                    // removed a single indexed AVU on an object
-                    if(type == data_object) {
+                    // removed a single indexed AVU on an object or collection
+                    if(type == data_object ||
+                       (type == collection && config->index != attribute)) {
                         // schedule an AVU purge
                         idx.schedule_metadata_purge_event(
-                                collection_name,
+                                logical_path,
                                 _rei->rsComm->clientUser.userName,
                                 attribute,
                                 value,
@@ -288,21 +304,52 @@ namespace {
                             if(collection_metadata_is_new) {
                                 idx.schedule_collection_operation(
                                     irods::indexing::operation_type::index,
-                                    collection_name,
+                                    logical_path,
                                     _rei->rsComm->clientUser.userName,
                                     value,
                                     units);
                             }
                         }
                     }
-                    if(type == data_object) {
+                    if(type == data_object ||
+                       (type == collection && config->index != attribute)) {
                         idx.schedule_metadata_indexing_event(
-                                collection_name,
+                                logical_path,
                                 _rei->rsComm->clientUser.userName,
                                 attribute,
                                 value,
                                 units);
                     }
+                }
+            }
+            else if("pep_api_data_obj_unlink_pre" == _rn) {
+                auto it = _args.begin();
+                std::advance(it, 2);
+                if(_args.end() == it) {
+                    THROW(
+                        SYS_INVALID_INPUT_PARAM,
+                        "invalid number of arguments");
+                }
+                const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
+                namespace fs   = irods::experimental::filesystem;
+                namespace fsvr = irods::experimental::filesystem::server;
+                fs::path data_logical_path {obj_inp->objPath};
+                std::string query_str {
+                    boost::str(boost::format("select DATA_ID,META_DATA_ATTR_NAME,META_DATA_ATTR_VALUE,META_DATA_ATTR_UNITS"
+                                             " where DATA_NAME = '%s' and COLL_NAME = '%s'"
+                                             ) % data_logical_path.object_name().string() 
+                                               % data_logical_path.parent_path().string() )
+                };
+                irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
+                for (const auto & row : qobj) {
+                     rodsLog(LOG_NOTICE,"  DWM data obj unlink ** marking id=%s  path=%s to  avu (%s %s %s)",
+                            row[0].c_str(),
+                            obj_inp->objPath,
+                            row[1].c_str(),
+                            row[2].c_str(),
+                            row[3].c_str()
+                            );
+                     avus_to_purge[obj_inp->objPath].emplace_back( row[0], obj_inp->objPath, row[1], row[2], row[3] );
                 }
             }
             else if("pep_api_data_obj_unlink_post" == _rn) {
@@ -319,6 +366,54 @@ namespace {
                 idx.schedule_full_text_purge_event(
                     obj_inp->objPath,
                     _rei->rsComm->clientUser.userName);
+                const std::string & indexAttr = config->index;
+                for (const auto &avu : avus_to_purge[obj_inp->objPath] ) {
+                    auto attr  = std::get<2>(avu);
+                    auto value = std::get<3>(avu);
+                    auto units = std::get<4>(avu);
+                    if (attr != indexAttr) {
+                        idx.schedule_metadata_purge_event(
+                                std::get<1>(avu),    // path
+                                _rei->rsComm->clientUser.userName,
+                                attr, value, units,
+                                std::get<0>(avu)     // optional id
+                        );
+                    }
+                }
+            }
+            else if("pep_api_rm_coll_pre"  == _rn) {
+                auto it = _args.begin();
+                std::advance(it, 2);
+                if(_args.end() == it) {
+                    THROW(
+                        SYS_INVALID_INPUT_PARAM,
+                        "invalid number of arguments");
+                }
+                CollInp*obj_inp = nullptr;
+                obj_inp = boost::any_cast<CollInp*>(*it);
+                try {
+                    if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_coll_force_kw = p; }
+                }
+                catch(const irods::exception &e) {
+                    std::string huh = e.what();
+                    rodsLog (LOG_ERROR, "getValByKey: %s", huh.c_str());
+                }
+                rodsLog (LOG_NOTICE, "force_flag collected as: [%s] ",nullptr == rm_coll_force_kw ? "NULL" : rm_coll_force_kw);
+            }
+            else if("pep_api_rm_coll_post"  == _rn) {
+                if ('*' != rm_coll_force_kw[0]) { /* there was a force keyword */
+		    auto it = _args.begin();
+		    std::advance(it, 2);
+		    if(_args.end() == it) {
+			THROW(
+			    SYS_INVALID_INPUT_PARAM,
+			    "invalid number of arguments");
+		    }
+		    CollInp* obj_inp = nullptr;
+		    obj_inp = boost::any_cast<CollInp*>(*it);
+		    irods::indexing::indexer idx{_rei, config->instance_name_};
+		    idx.schedule_metadata_purge_for_recursive_rm_coll (  obj_inp->collName );
+                }
             }
         }
         catch(const boost::bad_any_cast& _e) {
@@ -351,6 +446,32 @@ namespace {
 
     } // apply_object_policy
 
+/*** dwm ***/
+
+    void apply_specific_policy(
+        ruleExecInfo_t*    _rei,
+        const std::string& _policy_name,  // request *specific policy by name
+        const std::string& _object_path,
+        const std::string& _source_resource,
+        const std::string& _indexer,
+        const std::string& _index_name,
+        const std::string& _index_type) {
+
+//      const std::string policy_name{irods::indexing::policy::compose_policy_name(
+ //                           _policy_root,
+  //                          _indexer)};
+
+        std::list<boost::any> args;
+        args.push_back(boost::any(_object_path));
+        args.push_back(boost::any(_source_resource));
+        args.push_back(boost::any(_index_name));
+        args.push_back(boost::any(_index_type));
+        irods::indexing::invoke_policy(_rei, _policy_name, args);
+
+    } // apply_specific_policy
+
+/***********/
+
     void apply_metadata_policy(
         ruleExecInfo_t*    _rei,
         const std::string& _policy_root,
@@ -368,13 +489,31 @@ namespace {
             const boost::filesystem::path p{_object_path};
             const std::string coll_name = p.parent_path().string();
             const std::string data_name = p.filename().string();
-            const std::string query_str {
-                boost::str(
+            std::string query_str;
+            namespace fs   = irods::experimental::filesystem;
+            namespace fsvr = irods::experimental::filesystem::server;
+            const auto s = fsvr::status(*_rei->rsComm,  fs::path{_object_path});
+
+            if (fsvr::is_data_object(s)) {
+                query_str =  boost::str(
                     boost::format("SELECT META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'")
                         % data_name
-                        % coll_name) };
+                        % coll_name);
+            }
+            else if (fsvr::is_collection(s)) {
+                query_str =  boost::str(
+                    boost::format("SELECT META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE COLL_NAME = '%s' ")
+                        % _object_path);
+            }
+            else {
+                rodsLog (LOG_ERROR, "object [%s] in apply_metadata_policy() is not a data_object or collection",_object_path.c_str());
+                return;
+            }
+
             irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
+
             for (const auto& result : qobj) {
+                if (config->index == result[0] && fsvr::is_collection(s)) { continue; }
                 std::list<boost::any> args;
                 args.push_back(boost::any(_object_path));
                 args.push_back(boost::any(result[0]));
@@ -382,7 +521,7 @@ namespace {
                 args.push_back(boost::any(result[2]));
                 args.push_back(boost::any(_index_name));
                 irods::indexing::invoke_policy(_rei, policy_name, args);
-            } // for
+            }
         }
         else {
             std::list<boost::any> args;
@@ -420,12 +559,16 @@ irods::error rule_exists(
                                     "pep_api_data_obj_open_post",
                                     "pep_api_data_obj_create_post",
                                     "pep_api_data_obj_repl_post",
+                                    "pep_api_data_obj_unlink_pre",
                                     "pep_api_data_obj_unlink_post",
                                     "pep_api_mod_avu_metadata_pre",
                                     "pep_api_mod_avu_metadata_post",
                                     "pep_api_data_obj_close_post",
                                     "pep_api_data_obj_put_post",
-                                    "pep_api_phy_path_reg_post"};
+                                    "pep_api_phy_path_reg_post",
+                                    "pep_api_rm_coll_pre",
+                                    "pep_api_rm_coll_post",
+    };
     _ret = rules.find(_rn) != rules.end();
 
     return SUCCESS();
@@ -693,6 +836,23 @@ irods::error exec_rule_expression(
                         _e.code(),
                         _e.what());
             }
+        }
+        else if("irods_policy_recursive_rm_coll_avus" == rule_obj["rule-engine-operation"]) {
+
+                const std::string& user_name = rule_obj["user-name"];
+                rstrcpy(
+                    rei->rsComm->clientUser.userName,
+                    user_name.c_str(),
+                    NAME_LEN);
+
+                apply_specific_policy(
+                    rei,
+                    "irods_policy_recursive_rm_coll_avus",
+                    rule_obj["object-path"],
+                    rule_obj["source-resource"],
+                    rule_obj["indexer"],
+                    rule_obj["index-name"],
+                    rule_obj["index-type"]);
         }
         else {
             printErrorStack(&rei->rsComm->rError);

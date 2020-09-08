@@ -19,6 +19,8 @@ namespace irods {
                 ruleExecInfo_t*    _rei,
                 const std::string& _instance_name);
 
+            void schedule_metadata_purge_for_recursive_rm_coll( const std::string& logical_path) ;
+
             void schedule_indexing_policy(
                 const std::string& _json,
                 const std::string& _params);
@@ -65,7 +67,8 @@ namespace irods {
                 const std::string& _user_name,
                 const std::string& _attribute = {},
                 const std::string& _value = {},
-                const std::string& _units = {});
+                const std::string& _units = {},
+                const std::string& opt_id = {});
 
             private:
             std::string generate_delay_execution_parameters();
@@ -78,7 +81,8 @@ namespace irods {
                 const std::string& _source_resource = {},
                 const std::string& _attribute = {},
                 const std::string& _value = {},
-                const std::string& _units = {});
+                const std::string& _units = {},
+                const std::string& opt_id = {});
 
             void get_metadata_for_data_object(
                 const std::string& _meta_attr_name,
@@ -103,7 +107,9 @@ namespace irods {
                 const std::string& _data_movement_params,
                 const std::string& _attribute = {},
                 const std::string& _value = {},
-                const std::string& _units = {});
+                const std::string& _units = {},
+                const std::string& obj_optional_ID = {}
+            );
 
             std::vector<std::string> get_indexing_resource_names();
 
@@ -125,6 +131,8 @@ namespace irods {
             configuration   config_;
 
             const std::string EMPTY_RESOURCE_NAME{"EMPTY_RESOURCE_NAME"};
+
+            public: const configuration& get_config() { return config_; }
         }; // class indexer
     } // namespace indexing
 } // namespace irods

@@ -11,10 +11,13 @@
 #include "rsModAVUMetadata.hpp"
 #include "irods_hasher_factory.hpp"
 #include "MD5Strategy.hpp"
+#include "json.hpp"
 
 #include "transport/default_transport.hpp"
+#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include "filesystem.hpp"
 
+#include "cpr/api.h"
 #include "cpr/response.h"
 #include "elasticlient/client.h"
 #include "elasticlient/bulk.h"
@@ -91,7 +94,7 @@ namespace {
     } // apply_document_type_policy
 
     void log_fcn(elasticlient::LogLevel, const std::string& _msg) {
-        rodsLog(LOG_ERROR, "ELASTICLIENT :: [%s]", _msg.c_str());
+        rodsLog(LOG_DEBUG, "ELASTICLIENT :: [%s]", _msg.c_str());
     } // log_fcn
 
     std::string generate_id() {
@@ -123,12 +126,18 @@ namespace {
         boost::filesystem::path p{_object_path};
         std::string coll_name = p.parent_path().string();
         std::string data_name = p.filename().string();
-        std::string query_str {
-            boost::str(
-                boost::format("SELECT DATA_ID WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'")
-                    % data_name
-                    % coll_name) };
-
+        namespace fs   = irods::experimental::filesystem;
+        namespace fsvr = irods::experimental::filesystem::server;
+        std::string query_str;
+        if (fsvr::is_collection( *_rei->rsComm, fs::path{_object_path} )) {
+            query_str = boost::str( boost::format("SELECT COLL_ID WHERE COLL_NAME = '%s'")
+                                        % _object_path );
+        }
+        else {
+            query_str = boost::str( boost::format("SELECT DATA_ID WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'")
+                                        % data_name
+                                        % coll_name );
+        }
         try {
             irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
             if(qobj.size() > 0) {
@@ -375,11 +384,10 @@ namespace {
 
         try {
             elasticlient::Client client{config->hosts_};
+            auto object_id = get_object_index_id( _rei, _object_path);
             const std::string md_index_id{
                                   get_metadata_index_id(
-                                      get_object_index_id(
-                                          _rei,
-                                          _object_path),
+                                      object_id,
                                       _attribute,
                                       _value,
                                       _unit)};
@@ -434,11 +442,15 @@ namespace {
 
         try {
             elasticlient::Client client{config->hosts_};
+            namespace fsvr = irods::experimental::filesystem;
+            // we now accept object id or path here, so pep_api_rm_coll_post can purge
+            std::string object_id {
+              fsvr::path{_object_path}.is_absolute() ? get_object_index_id( _rei, _object_path)
+                                                     :  _object_path
+            };
             const std::string md_index_id{
                                   get_metadata_index_id(
-                                      get_object_index_id(
-                                          _rei,
-                                          _object_path),
+                                      object_id,
                                       _attribute,
                                       _value,
                                       _unit)};
@@ -505,8 +517,9 @@ irods::error start(
     metadata_purge_policy = irods::indexing::policy::compose_policy_name(
                                irods::indexing::policy::metadata::purge,
                                "elasticsearch");
-
-    elasticlient::setLogFunction(log_fcn);
+    if (getRodsLogLevel() > LOG_NOTICE) {
+       elasticlient::setLogFunction(log_fcn);
+    }
     return SUCCESS();
 }
 
@@ -520,7 +533,8 @@ irods::error rule_exists(
     irods::default_re_ctx&,
     const std::string& _rn,
     bool&              _ret) {
-    _ret = object_index_policy   == _rn ||
+    _ret = "irods_policy_recursive_rm_coll_avus" == _rn ||
+           object_index_policy   == _rn ||
            object_purge_policy   == _rn ||
            metadata_index_policy == _rn ||
            metadata_purge_policy == _rn;
@@ -544,6 +558,7 @@ irods::error exec_rule(
     irods::callback        _eff_hdlr) {
     ruleExecInfo_t* rei{};
     const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
+
     if(!err.ok()) {
         return err;
     }
@@ -606,6 +621,39 @@ irods::error exec_rule(
                 index_name);
 
         }
+        else if(_rn == "irods_policy_recursive_rm_coll_avus") {
+            using nlohmann::json;
+            auto it = _args.begin();
+            const  std::string coll_path{ boost::any_cast<std::string>(*it) }; ++it;
+            auto escaped_path = ( [] (std::string path_) -> std::string {
+                                    boost::replace_all ( path_,  "\\" , "\\\\");
+                                    boost::replace_all ( path_,  "?" , "\\?");
+                                    boost::replace_all ( path_,  "*" , "\\*");
+                                    return path_; }) (coll_path);
+            // -- "wildcard" must be used even for the exact-path match as delete_by_query evidently won't support "match"
+            const json JtopLevel   = json::parse(boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s"}}}})JSON") % escaped_path.c_str()));
+            const json JsubObjects = json::parse(boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s/*"}}}})JSON") % escaped_path.c_str()));
+            for (const std::string & endpt : config->hosts_) {
+                std::string base_URL { endpt };
+                base_URL.erase(base_URL.find_last_not_of("/")+1);  // get rid of trailing slash(es)
+                auto get_indices_URL { base_URL + "/_cat/indices" };
+                cpr::Response r_ind = cpr::Get(cpr::Url{ get_indices_URL }, cpr::Parameters{{"format", "json"}});
+                std::vector<std::string> indices;
+                std::string json_to_parse{ r_ind.text };
+                auto response_array = json::parse( std::string{json_to_parse} );
+                std::for_each( response_array.cbegin(),
+                               response_array.cend(),   [&indices](const auto &e){indices.push_back(e["index"]);} );
+                for (const auto & e : indices) {
+                    const std::string qu_by_del_URL { base_URL + "/" + e + "/_delete_by_query" } ;
+                    for (const auto & payld :{JtopLevel,JsubObjects}) {
+                        std::string json_out = payld.dump();
+                        auto r = cpr::Post(cpr::Url{qu_by_del_URL},
+                                     cpr::Body{payld.dump()},
+                                     cpr::Header{{"Content-Type", "application/json"}});
+                    }
+                }
+            }
+        } // "irods_policy_recursive_rm_coll_avus"
         else {
             return ERROR(
                     SYS_NOT_SUPPORTED,
