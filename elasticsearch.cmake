@@ -47,7 +47,10 @@ target_link_libraries(
     PRIVATE
     ${IRODS_PLUGIN_POLICY_LINK_LIBRARIES}
     ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so
+    ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_regex.so
+    ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_system.so
     /opt/irods-externals/elasticlient0.1.0-1/lib/libelasticlient.so
+
     /opt/irods-externals/elasticlient0.1.0-1/lib/libjsoncpp.so
     /opt/irods-externals/cpr1.3.0-1/lib/libcpr.so
     irods_common
