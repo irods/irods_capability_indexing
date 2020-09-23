@@ -3,6 +3,7 @@
 #include "irods_re_plugin.hpp"
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
+#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
 #include "irods_query.hpp"
 #include "irods_virtual_path.hpp"
 
@@ -227,14 +228,10 @@ namespace irods {
             return std::make_tuple(index_name, index_type);
         }
 
-        void indexer::schedule_metadata_purge_for_recursive_rm_coll( const std::string& logical_path,
+        void indexer::schedule_metadata_purge_for_recursive_rm_object( const std::string& logical_path,
                                                                      bool recurse_flag ) {
-                            rodsLog(LOG_NOTICE,"path [%s] for rm coll recursive avu removal",
-                                logical_path.c_str()
-                            );
-
                             schedule_policy_event_for_object(
-                                /*policy_name, */ "irods_policy_recursive_rm_coll_avus",
+                                /*policy_name, */ "irods_policy_recursive_rm_object_by_path",
                                 logical_path,
                                 /*_user_name,*/ "",
                                 EMPTY_RESOURCE_NAME,
@@ -568,7 +565,6 @@ namespace irods {
             const std::string& _units,
             const std::string& obj_optional_ID) {
             using json = nlohmann::json;
-            rodsLog(LOG_NOTICE, "delay-schedule policy evt for obj path ['%s'] id [%s]", _object_path.c_str() , obj_optional_ID.c_str());
             json rule_obj;
             rule_obj["rule-engine-operation"]     = _event;
             rule_obj["rule-engine-instance-name"] = config_.instance_name_;
@@ -576,9 +572,6 @@ namespace irods {
             rule_obj["user-name"]                 = _user_name;
             rule_obj["indexer"]                   = _indexer;
             rule_obj["index-name"]                = _index_name;
-
-rodsLog (LOG_NOTICE,"********************* DWM DWM DWM DWM DWM DWM ************************* %s", _index_name.c_str());
-
             rule_obj["index-type"]                = _index_type;
             rule_obj["source-resource"]           = _source_resource;
             rule_obj["attribute"]                 = _attribute;

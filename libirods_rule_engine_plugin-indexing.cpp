@@ -1,11 +1,12 @@
 
 // =-=-=-=-=-=-=-
 // irods includes
+#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#include "irods_query.hpp"
 #include "irods_re_plugin.hpp"
 #include "irods_re_ruleexistshelper.hpp"
 #include "irods_hierarchy_parser.hpp"
 #include "irods_resource_backport.hpp"
-#include "irods_query.hpp"
 #include "rsModAVUMetadata.hpp"
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include "filesystem.hpp"
@@ -54,7 +55,7 @@ namespace {
                                           std::string, /*V*/
                                           std::string  /*U*/ >>> avus_to_purge;
 
-    const char* rm_coll_force_kw = "*";
+    const char* rm_force_kw = "*";
 
     std::tuple<int, std::string>
     get_index_and_resource(const dataObjInp_t* _inp) {
@@ -331,28 +332,7 @@ namespace {
                         "invalid number of arguments");
                 }
                 const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
-/*
-                namespace fs   = irods::experimental::filesystem;
-                namespace fsvr = irods::experimental::filesystem::server;
-                fs::path data_logical_path {obj_inp->objPath};
-                std::string query_str {
-                    boost::str(boost::format("select DATA_ID,META_DATA_ATTR_NAME,META_DATA_ATTR_VALUE,META_DATA_ATTR_UNITS"
-                                             " where DATA_NAME = '%s' and COLL_NAME = '%s'"
-                                             ) % data_logical_path.object_name().string() 
-                                               % data_logical_path.parent_path().string() )
-                };
-                irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
-                for (const auto & row : qobj) {
-                     rodsLog(LOG_NOTICE,"  DWM data obj unlink ** marking id=%s  path=%s to  avu (%s %s %s)",
-                            row[0].c_str(),
-                            obj_inp->objPath,
-                            row[1].c_str(),
-                            row[2].c_str(),
-                            row[3].c_str()
-                            );
-                     avus_to_purge[obj_inp->objPath].emplace_back( row[0], obj_inp->objPath, row[1], row[2], row[3] );
-                }
-*/
+                if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_force_kw = p; }
             }
             else if("pep_api_data_obj_unlink_post" == _rn) {
                 auto it = _args.begin();
@@ -363,29 +343,10 @@ namespace {
                         "invalid number of arguments");
                 }
                 const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
-                irods::indexing::indexer idx{_rei, config->instance_name_};
-                idx.schedule_metadata_purge_for_recursive_rm_coll (  obj_inp->objPath , false);
-/*
-                const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
-                irods::indexing::indexer idx{_rei, config->instance_name_};
-                idx.schedule_full_text_purge_event(
-                    obj_inp->objPath,
-                    _rei->rsComm->clientUser.userName);
-                const std::string & indexAttr = config->index;
-                for (const auto &avu : avus_to_purge[obj_inp->objPath] ) {
-                    auto attr  = std::get<2>(avu);
-                    auto value = std::get<3>(avu);
-                    auto units = std::get<4>(avu);
-                    if (attr != indexAttr) {
-                        idx.schedule_metadata_purge_event(
-                                std::get<1>(avu),    // path
-                                _rei->rsComm->clientUser.userName,
-                                attr, value, units,
-                                std::get<0>(avu)     // optional id
-                        );
-                    }
+                if ('*' != rm_force_kw[0]) { /* there was a force keyword */
+                    irods::indexing::indexer idx{_rei, config->instance_name_};
+                    idx.schedule_metadata_purge_for_recursive_rm_object (  obj_inp->objPath , false);
                 }
-*/
             }
             else if("pep_api_rm_coll_pre"  == _rn) {
                 auto it = _args.begin();
@@ -397,17 +358,10 @@ namespace {
                 }
                 CollInp*obj_inp = nullptr;
                 obj_inp = boost::any_cast<CollInp*>(*it);
-                try {
-                    if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_coll_force_kw = p; }
-                }
-                catch(const irods::exception &e) {
-                    std::string huh = e.what();
-                    rodsLog (LOG_ERROR, "getValByKey: %s", huh.c_str());
-                }
-                rodsLog (LOG_NOTICE, "force_flag collected as: [%s] ",nullptr == rm_coll_force_kw ? "NULL" : rm_coll_force_kw);
+                if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_force_kw = p; }
             }
             else if("pep_api_rm_coll_post"  == _rn) {
-                if ('*' != rm_coll_force_kw[0]) { /* there was a force keyword */
+                if ('*' != rm_force_kw[0]) { /* there was a force keyword */
 		    auto it = _args.begin();
 		    std::advance(it, 2);
 		    if(_args.end() == it) {
@@ -418,7 +372,7 @@ namespace {
 		    CollInp* obj_inp = nullptr;
 		    obj_inp = boost::any_cast<CollInp*>(*it);
 		    irods::indexing::indexer idx{_rei, config->instance_name_};
-		    idx.schedule_metadata_purge_for_recursive_rm_coll (  obj_inp->collName );
+		    idx.schedule_metadata_purge_for_recursive_rm_object (  obj_inp->collName );
                 }
             }
         }
@@ -452,26 +406,21 @@ namespace {
 
     } // apply_object_policy
 
-/*** dwm ***/
-
     void apply_specific_policy(
         ruleExecInfo_t*    _rei,
-        const std::string& _policy_name,  // request *specific policy by name
+        const std::string& _policy_name,  // request specific policy by name
         const std::string& _object_path,
         const std::string& _source_resource,
         const std::string& _indexer,
         const std::string& _index_name,
         const std::string& _index_type) {
 
-//      const std::string policy_name{irods::indexing::policy::compose_policy_name(
- //                           _policy_root,
-  //                          _indexer)};
-
         std::list<boost::any> args;
         args.push_back(boost::any(_object_path));
         args.push_back(boost::any(_source_resource));
         args.push_back(boost::any(_index_name));
         args.push_back(boost::any(_index_type));
+
         irods::indexing::invoke_policy(_rei, _policy_name, args);
 
     } // apply_specific_policy
@@ -843,7 +792,7 @@ irods::error exec_rule_expression(
                         _e.what());
             }
         }
-        else if("irods_policy_recursive_rm_coll_avus" == rule_obj["rule-engine-operation"]) {
+        else if("irods_policy_recursive_rm_object_by_path" == rule_obj["rule-engine-operation"]) {
 
                 const std::string& user_name = rule_obj["user-name"];
                 rstrcpy(
@@ -853,7 +802,7 @@ irods::error exec_rule_expression(
 
                 apply_specific_policy(
                     rei,
-                    "irods_policy_recursive_rm_coll_avus",
+                    "irods_policy_recursive_rm_object_by_path",
                     rule_obj["object-path"],
                     rule_obj["source-resource"],
                     rule_obj["indexer"],

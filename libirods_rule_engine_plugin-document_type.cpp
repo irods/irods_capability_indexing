@@ -1,6 +1,6 @@
 
 #define IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
-
+#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
 #include "irods_query.hpp"
 #include "irods_re_plugin.hpp"
 #include "irods_re_ruleexistshelper.hpp"
