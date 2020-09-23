@@ -1,6 +1,6 @@
 
 #define IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
-
+#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
 #include "irods_query.hpp"
 #include "irods_re_plugin.hpp"
 #include "irods_re_ruleexistshelper.hpp"
@@ -539,6 +539,7 @@ namespace {
                             % escape_string( _attribute )
                             % escape_string( _value )
                             % escape_string( _unit)       )} ;
+
             const cpr::Response response = client.index(_index_name, "text", md_index_id, payload);
             if(response.status_code != 200 && response.status_code != 201) {
                 THROW(
@@ -673,7 +674,7 @@ irods::error rule_exists(
     irods::default_re_ctx&,
     const std::string& _rn,
     bool&              _ret) {
-    _ret = "irods_policy_recursive_rm_coll_avus" == _rn ||
+    _ret = "irods_policy_recursive_rm_object_by_path" == _rn ||
            object_index_policy   == _rn ||
            object_purge_policy   == _rn ||
            metadata_index_policy == _rn ||
@@ -761,7 +762,7 @@ irods::error exec_rule(
                 index_name);
 
         }
-        else if(_rn == "irods_policy_recursive_rm_coll_avus") {
+        else if(_rn == "irods_policy_recursive_rm_object_by_path") {
             using nlohmann::json;
             auto it = _args.begin();
             const  std::string coll_path{ boost::any_cast<std::string>(*it) };
@@ -772,9 +773,6 @@ irods::error exec_rule(
                                     boost::replace_all ( path_,  "?" , "\\?");
                                     boost::replace_all ( path_,  "*" , "\\*");
                                     return path_; }) (coll_path);
-            rodsLog (LOG_NOTICE, "DWM *********  in func %s, path [%s] (recurse_flag) = [%s]" , __FUNCTION__ , 
-                                     coll_path.c_str(), recurse_flag.c_str()
-                                  );
             // -- "wildcard" must be used even for the exact-path match as delete_by_query evidently won't support "match"
             std::string JtopLevel   = json::parse(
                                           boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s"}}}})JSON") % escaped_path.c_str())
@@ -807,7 +805,7 @@ irods::error exec_rule(
                     rodsLog(LOG_NOTICE, "Cannot reach elasticsearch on : %s" , endpt.c_str());
                 }
             }
-        } // "irods_policy_recursive_rm_coll_avus"
+        } // "irods_policy_recursive_rm_object_by_path"
         else {
             return ERROR(
                     SYS_NOT_SUPPORTED,
