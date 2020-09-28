@@ -193,13 +193,13 @@ def search_index_for_All_object_paths(index_name, port = ELASTICSEARCH_PORT):
 def create_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_mapping/text ".format(**locals()) +
-                        """ -d '{ "properties" : { "object_path" : { "type" : "text" }, "data" : { "type" : "text" } } }'""")
+                        """ -d '{ "properties" : { "object_path" : { "type" : "keyword" }, "data" : { "type" : "text" } } }'""")
 
 def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEARCH_PORT):
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_mapping/text ".format(**locals()) +
-                        """ -d '{ "properties" : { "object_path" : { "type" : "text" }, "attribute" : { "type" : "text" },"""\
-                        """ "value" : { "type" : "text" }, "unit" : { "type" : "text" } } }'""")
+                        """ -d '{ "properties" : { "object_path" : { "type" : "keyword" }, "attribute" : { "type" : "keyword" },"""\
+                        """ "value" : { "type" : "keyword" }, "unit" : { "type" : "keyword" } } }'""")
 
 def delete_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
     lib.execute_command("curl -X DELETE -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
