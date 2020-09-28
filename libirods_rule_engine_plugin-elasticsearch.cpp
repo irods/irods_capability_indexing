@@ -764,33 +764,47 @@ irods::error exec_rule(
         else if(_rn == "irods_policy_recursive_rm_coll_avus") {
             using nlohmann::json;
             auto it = _args.begin();
-            const  std::string coll_path{ boost::any_cast<std::string>(*it) }; ++it;
+            const  std::string coll_path{ boost::any_cast<std::string>(*it) };
+            std::advance( it, 2 );
+            const std::string recurse_flag = boost::any_cast<std::string>(*it) ;
             auto escaped_path = ( [] (std::string path_) -> std::string {
                                     boost::replace_all ( path_,  "\\" , "\\\\");
                                     boost::replace_all ( path_,  "?" , "\\?");
                                     boost::replace_all ( path_,  "*" , "\\*");
                                     return path_; }) (coll_path);
+            rodsLog (LOG_NOTICE, "DWM *********  in func %s, path [%s] (recurse_flag) = [%s]" , __FUNCTION__ , 
+                                     coll_path.c_str(), recurse_flag.c_str()
+                                  );
             // -- "wildcard" must be used even for the exact-path match as delete_by_query evidently won't support "match"
-            const json JtopLevel   = json::parse(boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s"}}}})JSON") % escaped_path.c_str()));
-            const json JsubObjects = json::parse(boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s/*"}}}})JSON") % escaped_path.c_str()));
+            std::string JtopLevel   = json::parse(
+                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s"}}}})JSON") % escaped_path.c_str())
+                                      ).dump();
+            std::string JsubObject = json::parse(
+                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s/*"}}}})JSON") % escaped_path.c_str())
+                                      ).dump();
+            if ( recurse_flag == "") { JsubObject = ""  ; }
             for (const std::string & endpt : config->hosts_) {
-                std::string base_URL { endpt };
-                base_URL.erase(base_URL.find_last_not_of("/")+1);  // get rid of trailing slash(es)
-                auto get_indices_URL { base_URL + "/_cat/indices" };
-                cpr::Response r_ind = cpr::Get(cpr::Url{ get_indices_URL }, cpr::Parameters{{"format", "json"}});
-                std::vector<std::string> indices;
-                std::string json_to_parse{ r_ind.text };
-                auto response_array = json::parse( std::string{json_to_parse} );
-                std::for_each( response_array.cbegin(),
-                               response_array.cend(),   [&indices](const auto &e){indices.push_back(e["index"]);} );
-                for (const auto & e : indices) {
-                    const std::string qu_by_del_URL { base_URL + "/" + e + "/_delete_by_query" } ;
-                    for (const auto & payld :{JtopLevel,JsubObjects}) {
-                        std::string json_out = payld.dump();
-                        auto r = cpr::Post(cpr::Url{qu_by_del_URL},
-                                     cpr::Body{payld.dump()},
-                                     cpr::Header{{"Content-Type", "application/json"}});
+                try {
+                    std::string base_URL { endpt };
+                    base_URL.erase(base_URL.find_last_not_of("/")+1);  // get rid of trailing slash(es)
+                    auto get_indices_URL { base_URL + "/_cat/indices" };
+                    cpr::Response r_ind = cpr::Get(cpr::Url{ get_indices_URL }, cpr::Parameters{{"format", "json"}});
+                    std::vector<std::string> indices;
+                    std::string json_to_parse{ r_ind.text };
+                    auto response_array = json::parse( std::string{json_to_parse} );
+                    std::for_each( response_array.cbegin(),
+                                   response_array.cend(), [&indices](const auto &e){indices.push_back(e["index"]);} );
+                    for (const auto & e : indices) {
+                        const std::string del_by_qu_URL { base_URL + "/" + e + "/_delete_by_query" } ;
+                        for (const std::string &json_out  :{JtopLevel,JsubObject}) {
+                            if (json_out == "") { continue; }
+                            auto r = cpr::Post(cpr::Url{del_by_qu_URL},
+                                         cpr::Body{json_out},
+                                         cpr::Header{{"Content-Type", "application/json"}});
+                        }
                     }
+                } catch (nlohmann::json::parse_error & e) { 
+                    rodsLog(LOG_NOTICE, "Cannot reach elasticsearch on : %s" , endpt.c_str());
                 }
             }
         } // "irods_policy_recursive_rm_coll_avus"
