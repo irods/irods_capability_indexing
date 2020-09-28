@@ -456,7 +456,6 @@ namespace irods {
                 }
                 catch(const irods::exception&) {
                 }
-
                 if (0 == coll.compare(coll.root_collection())) { break; }
                 coll = coll.parent_path();
 
@@ -532,12 +531,13 @@ namespace irods {
         indexer::metadata_results indexer::get_metadata_for_collection(
             const std::string& _collection,
             const std::string& _meta_attr_name) {
+
             std::string query_str {
                 boost::str(
                         boost::format("SELECT META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE META_COLL_ATTR_NAME = '%s' and COLL_NAME = '%s'") %
                         _meta_attr_name %
                         _collection) };
-            query<rsComm_t> qobj{comm_, query_str, 1};
+            query<rsComm_t> qobj{comm_, query_str};
             if(qobj.size() == 0) {
                 THROW(
                     CAT_NO_ROWS_FOUND,
