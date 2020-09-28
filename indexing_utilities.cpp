@@ -227,8 +227,8 @@ namespace irods {
             return std::make_tuple(index_name, index_type);
         }
 
-        void indexer::schedule_metadata_purge_for_recursive_rm_coll( const std::string& logical_path) {
-
+        void indexer::schedule_metadata_purge_for_recursive_rm_coll( const std::string& logical_path,
+                                                                     bool recurse_flag ) {
                             rodsLog(LOG_NOTICE,"path [%s] for rm coll recursive avu removal",
                                 logical_path.c_str()
                             );
@@ -238,9 +238,9 @@ namespace irods {
                                 logical_path,
                                 /*_user_name,*/ "",
                                 EMPTY_RESOURCE_NAME,
-                                /*_indexer, */    "elasticsearch",
-                                /*_index_name, */ "",
-                                /*_index_type, */ "metadata",
+                                /* _indexer, */    "elasticsearch",
+                                /* recurse_flag instead of _index_name, */ recurse_flag ? "recursive" : "",
+                                /* _index_type, */ "metadata",
                                 generate_delay_execution_parameters());
         }
 
@@ -576,6 +576,9 @@ namespace irods {
             rule_obj["user-name"]                 = _user_name;
             rule_obj["indexer"]                   = _indexer;
             rule_obj["index-name"]                = _index_name;
+
+rodsLog (LOG_NOTICE,"********************* DWM DWM DWM DWM DWM DWM ************************* %s", _index_name.c_str());
+
             rule_obj["index-type"]                = _index_type;
             rule_obj["source-resource"]           = _source_resource;
             rule_obj["attribute"]                 = _attribute;
