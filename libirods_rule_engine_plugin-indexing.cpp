@@ -331,6 +331,7 @@ namespace {
                         "invalid number of arguments");
                 }
                 const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
+/*
                 namespace fs   = irods::experimental::filesystem;
                 namespace fsvr = irods::experimental::filesystem::server;
                 fs::path data_logical_path {obj_inp->objPath};
@@ -351,6 +352,7 @@ namespace {
                             );
                      avus_to_purge[obj_inp->objPath].emplace_back( row[0], obj_inp->objPath, row[1], row[2], row[3] );
                 }
+*/
             }
             else if("pep_api_data_obj_unlink_post" == _rn) {
                 auto it = _args.begin();
@@ -360,7 +362,10 @@ namespace {
                         SYS_INVALID_INPUT_PARAM,
                         "invalid number of arguments");
                 }
-
+                const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
+                irods::indexing::indexer idx{_rei, config->instance_name_};
+                idx.schedule_metadata_purge_for_recursive_rm_coll (  obj_inp->objPath , false);
+/*
                 const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
                 irods::indexing::indexer idx{_rei, config->instance_name_};
                 idx.schedule_full_text_purge_event(
@@ -380,6 +385,7 @@ namespace {
                         );
                     }
                 }
+*/
             }
             else if("pep_api_rm_coll_pre"  == _rn) {
                 auto it = _args.begin();
