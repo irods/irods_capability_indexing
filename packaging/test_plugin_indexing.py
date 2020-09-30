@@ -47,9 +47,12 @@ except NameError: pass
 # calls f the requested 'num_iter' times with sleeps of 'interval' seconds until this
 # becomes true.  None is returned if the repetition times out before becoming true.
 
-def repeat_until (op, value, interval=1.75, num_iter=28,
-                           transform = lambda x:x,
-                           debugPrinter = False):
+def repeat_until (op, value, interval=1.75, num_iter=30,   # Reasonable defaults for indexing tests.
+                           transform = lambda x:x,         # Identity (no transform) by default.
+                           debugPrinter = False,           # True for printing to stdout or define own.
+                           threshold = 1):                 # Require this many consecutive true results.
+    threshold = abs(int(threshold))
+    if threshold == 1: threshold = 0  ## don't count trivial case of one consecutive true result
     Err_pr = lambda *x,**kw: print(*x,**kw)
     Nul_pr = lambda *x,**kw: None
     if   debugPrinter is True:  pr = Err_pr
@@ -58,21 +61,44 @@ def repeat_until (op, value, interval=1.75, num_iter=28,
     def deco(fn):
         def wrapper(*x,**kw):
             n_iter = num_iter
-            while n_iter > 0:     # Do num_iter times:
+            while n_iter != 0:     # Do num_iter times:
                 y = fn(*x,**kw)       # generate transform of
                 y = transform(y)      #    fn(...) return value
                 pr(y,end=' ')         # and
                 if op(y,value):       # return True when/if it satisfies the comparison
-                    pr('Y')
-                    return True
-                pr('N')
-                n_iter -= 1           # Note if loop times out,
-                sleep(interval)       #   we implicitly return None
+                    pr('Y',n_iter)
+                    if threshold == 0: # if zero threshold, report success immediately
+                        return True
+                    else:              # else require [threshold] consecutive true results
+                        if n_iter <= -threshold: return True
+                        if n_iter > 0: n_iter = -1
+                else:
+                    pr('N',n_iter)
+                    if n_iter < 0 : break
+                n_iter -= 1
+                sleep(interval)
+            # end while : we've timed out. Implicitly return None
         return wrapper
     return deco
 
-def number_of_hits (json_result):
-    return json.loads(json_result).get('hits',{}).get('total',0)
+# -----------
+# Used as a transform for the "repeat_until" delayed assert fcn
+
+def number_of_hits (json_result, hook = None):
+    struct = json.loads(json_result)
+    if callable(hook): hook(struct)
+    return struct.get('hits',{}).get('total',0)
+
+# Similar. Use as: repeat_until(op,value,transform=number_of_hits_fn(d)...)
+#                                (fn_to_repeat)(args_for__fn_to_repeat...)
+# Place exactly one hit into the list argument 'data_hook', if provided
+
+def make_number_of_hits_fcn(data_hook = None):
+    def insert(result):
+        data_hook[:] = [result]
+    fn = insert if isinstance(data_hook,list) else lambda _:None
+    return lambda js: number_of_hits(js,fn)
+# -----------
 
 SOURCE_BOOKS_URL  = 'https://cdn.patricktriest.com/data/books.zip'
 SOURCE_BOOKS_PATH = '/tmp/scratch'
@@ -150,7 +176,6 @@ def indexing_plugin__installed(arg=None):
 
 
 def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEARCH_PORT):
-
     out,_,rc = lib.execute_command_permissive( dedent("""\
         curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true -d '
         {{
@@ -163,15 +188,19 @@ def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEA
     if rc != 0: out = None
     return out
 
-def search_index_for_object_path(index_name, path_component, port = ELASTICSEARCH_PORT):
-
+def search_index_for_object_path(index_name, path_component, extra_source_fields="", port = ELASTICSEARCH_PORT):
+    path_component_matcher = ("*/" + path_component + ("/*" if not path_component.endswith("$") else "")).rstrip("$")
     out,_,rc = lib.execute_command_permissive( dedent("""\
         curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true -d '
         {{
             "from": 0, "size" : 500,
-            "_source" : ["object_path"],
+            "_source" : ["object_path" {extra_source_fields} ],
             "query" : {{
-                "term" : {{ "object_path" : "{path_component}"}}
+                "wildcard" : {{
+                    "object_path" : {{
+                        "value" :  "*/{path_component_matcher}"
+                    }}
+                }}
             }}
         }}'""").format(**locals()))
     if rc != 0: out = None
@@ -229,6 +258,7 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
         super(TestIndexingPlugin, self).tearDown()
         with session.make_session_for_existing_admin() as admin_session:
             self.remove_all_jobs_from_delay_queue( admin_session, initial_sleep=15.0 )
+            admin_session.assert_icommand("iadmin rum") # remove unused metadata
 
     @staticmethod
     def fail_unless_delay_queue_is_empty(session_):
@@ -240,11 +270,13 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
         session_.assert_icommand('iqdel -a', 'STDERR')
         self.fail_unless_delay_queue_is_empty( session_ )
 
-    def delay_queue_is_empty(self, session_, soft_assert = False, try_kill = False):
+    def delay_queue_is_empty(self, session_, soft_assert = False, try_kill = False, verbose = False):
         if try_kill:
             out,_,rc = session_.run_icommand('iqdel -a')
             if isinstance(try_kill, (float,int,long_type)) and try_kill > 0.0: sleep(try_kill)
         out,_,rc = session_.run_icommand('iqstat')
+        if verbose:
+            tempfile.NamedTemporaryFile(prefix='delay-queue-debug--',mode='a',delete=False).write('***\n OUT = ['+out+']***\n')
         condition = (rc == 0 and 'No delayed rules' in out)
         if soft_assert:
             self.assertTrue( condition )
@@ -286,11 +318,11 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     sleep(5) ; debugPrt (">>>>")
                     admin_session.assert_icommand('irm -fr {data_object_path} '.format(**locals()))
 
-                    self.assertIsNotNone ( repeat_until (operator.eq, True, transform = lambda x: 'object_purge' in x[0], debugPrinter = debugPrt )
+                    self.assertIsNotNone ( repeat_until (operator.eq, True, transform = lambda x: 'recursive_rm_object_by_path' in x[0], debugPrinter = debugPrt )
                                              (lambda : admin_session.run_icommand('iqstat')) () )
 
                     debugPrt ("<<<< wait for object purge job()s to disappear")
-                    self.assertIsNotNone ( repeat_until (operator.eq, False, transform = lambda x: 'object_purge' in x[0], debugPrinter = debugPrt )
+                    self.assertIsNotNone ( repeat_until (operator.eq, False, transform = lambda x: 'recursive_rm_object_by_path' in x[0], debugPrinter = debugPrt )
                                              (lambda : admin_session.run_icommand('iqstat')) () )
                 finally:
                     admin_session.assert_icommand('irm -fr {collection}'.format(**locals()))
@@ -336,6 +368,210 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     admin_session.assert_icommand("iadmin rum") # remove unused metadata
                     delete_metadata_index()
 
+    def test_applying_indicators_ex_post_facto (self):
+        with session.make_session_for_existing_admin() as admin_session:
+            create_fulltext_index()
+            create_metadata_index()
+            test_session = admin_session
+            path_to_home = '/{0.zone_name}/home/{0.username}'.format(test_session)
+            test_path = path_to_home + "/test_indicators_ex_post_facto"
+            data_1 = test_path + "/data1-post"
+            coll_1 = test_path + "/coll-1-post"
+            objects = [
+                # -- create the items to be indexed
+                ('create',      ['-C',{'path':test_path, 'delete_tree_when_done': True }]),
+                ('create',      ['-C',{'path':coll_1}]),
+                ('create',      ['-d',{'path':data_1, 'content':'caveat emptor'}]),
+                ('add_AVU',     ['-d',{'path':data_1,    'avu':('t-post-d1-attr','dataobj_meta','zz') }]),
+                ('add_AVU',     ['-C',{'path':coll_1,    'avu':('t-post-c1-attr','coll_meta','zz') }]),
+                ('add_AVU',     ['-C',{'path':test_path, 'avu':('t-post-c0-attr','coll_meta0','zz0') }]),
+
+                ('sleep_for',   ['',{'seconds':5}]),
+                ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+                # apply indexing indicator AVUs ...
+                ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_FULLTEXT_INDEX, 'index_type':'full_text'}]), # -- test [#19]
+                # ... and let the indexing happen
+                ('sleep_for',   ['',{'seconds':5}]),
+                ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+            ]
+            hit_ = []
+            func = make_number_of_hits_fcn (hit_)
+            hit_source = lambda key:hit_[0]['hits']['hits'][0]['_source'][key]
+            try:
+                with indexing_plugin__installed():
+                    with self.logical_filesystem_for_indexing (objects, test_session):
+                        resultCount = func (search_index_for_object_path(DEFAULT_FULLTEXT_INDEX, 'data1-post''$',
+                                                                         extra_source_fields = ',"data"'))
+                        self.assertEqual (resultCount, 1)
+                        self.assertTrue( hit_source('data') == 'caveat emptor' )
+
+                        _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-d1-attr'))
+                        self.assertTrue( hit_source('object_path') == data_1 )
+
+                        _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-c1-attr')) # -- test [#42]
+                        self.assertTrue( hit_source('object_path') == coll_1 )
+
+                        _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-c0-attr'))
+                        self.assertTrue( hit_source('object_path') == test_path )
+
+                    with self.logical_filesystem_for_indexing( # Wait for the full indexing purge (because of test_path recursive delete) to finish
+                                                               [ ('sleep_for',   ['',{'seconds':5}]),
+                                                                 ('wait_for',    [self.delay_queue_is_empty,
+                                                                                  {'num_iter':45,'interval':2.125,'threshold':2}]) ]
+                                                               ,test_session):
+                                                               # ... then test that indexed data has gone away.
+                        resultCount = func (search_index_for_object_path(DEFAULT_FULLTEXT_INDEX, 'data1-post''$'))
+                        self.assertEqual (resultCount, 0)
+                        resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-d1-attr'))
+                        self.assertEqual (resultCount, 0)
+                        resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-c1-attr'))
+                        self.assertEqual (resultCount, 0)
+                        resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-c0-attr'))
+                        self.assertEqual (resultCount, 0)
+            finally:
+                delete_fulltext_index()
+                delete_metadata_index()
+
+    def test_fulltext_and_metadata_indicators_on_same_colln__19(self):
+        with session.make_session_for_existing_admin() as admin_session:
+            create_fulltext_index()
+            create_metadata_index()
+            test_session = admin_session
+            path_to_home = '/{0.zone_name}/home/{0.username}'.format(test_session)
+            test_path = path_to_home + "/test_indexing_issue_19"
+            data_1 = test_path + "/data1"
+            coll_1 = test_path + "/coll-1"
+            objects = [
+                ('create',      ['-C',{'path':test_path, 'delete_tree_when_done': True }]),
+                ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_FULLTEXT_INDEX, 'index_type':'full_text'}]),
+
+                ('sleep_for',   ['',{'seconds':5}]),
+                ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+
+                ('create',      ['-C',{'path':coll_1}]),
+                ('create',      ['-d',{'path':data_1, 'content':'carpe diem'}]),
+                ('add_AVU',     ['-d',{'path':data_1, 'avu':('t19-d1-attr','dataobj_meta','zz') }]),
+                ('add_AVU',     ['-C',{'path':coll_1, 'avu':('t19-c1-attr','coll_meta','zz') }]),
+                ('add_AVU',     ['-C',{'path':test_path, 'avu':('t19-c0-attr','coll_meta0','zz0') }]),
+
+                ('sleep_for',   ['',{'seconds':5}]),
+                ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+            ]
+            hit_ = []
+            func = make_number_of_hits_fcn (hit_)
+            hit_source = lambda key:hit_[0]['hits']['hits'][0]['_source'][key]
+            try:
+                with indexing_plugin__installed():
+                    with self.logical_filesystem_for_indexing (objects, test_session):
+                        resultCount = func (search_index_for_object_path(DEFAULT_FULLTEXT_INDEX, 'data1''$', extra_source_fields = ',"data"')) #"data" => get content
+                        self.assertEqual (resultCount, 1)
+                        self.assertTrue( hit_source('data') == 'carpe diem' )
+                        _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-d1-attr'))
+                        self.assertTrue( hit_source('object_path') == data_1)
+                        _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-c1-attr'))
+                        self.assertTrue( hit_source('object_path') == coll_1)
+                        _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-c0-attr'))
+                        self.assertTrue( hit_source('object_path') == test_path)
+
+                        # -- nesting the teardown phase within the overall scope prevents premature deletion of the top-level collection
+                        with self.logical_filesystem_for_indexing ([ ('delete',    ['',{'path':data_1}]),
+                                                                     ('delete',    ['',{'path':coll_1}]),
+                                                                     ('rm_AVU',    ['-C',{'path':test_path, 'avu':('t19-c0-attr','coll_meta0','zz0') }]),
+                                                                     ('sleep_for', ['',{'seconds':5}]),
+                                                                     ('wait_for',  [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125, 'threshold':2}]),
+                                                                   ], test_session):
+                            resultCount = func (search_index_for_object_path(DEFAULT_FULLTEXT_INDEX, 'data1$')) # -- test [#37]
+                            self.assertEqual (resultCount, 0)
+                            resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-d1-attr')) # -- test [#46]
+                            self.assertEqual (resultCount, 0)
+                            resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-c1-attr')) # -- no issue # but need to test these
+                            self.assertEqual (resultCount, 0)
+                            resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-c0-attr')) #    are also removed from index
+                            self.assertEqual (resultCount, 0)
+            finally:
+                delete_fulltext_index()
+                delete_metadata_index()
+                #test_session.assert_icommand('irm -fr '+test_path, 'STDOUT', '')
+
+    def test_indexing_of_odd_chars_and_json_in_metadata__41__43(self):
+        with session.make_session_for_existing_admin() as admin_session:
+            self.remove_all_jobs_from_delay_queue(admin_session)
+            create_metadata_index()
+            test_session = admin_session
+            path_to_home = '/{0.zone_name}/home/{0.username}'.format(test_session)
+            test_path = path_to_home + "/test"
+            data_1 = test_path + "/data1"
+            data_2 = test_path + "/data2"
+            weird_String = ''.join(chr(c) for c in list(range(33,127)))+' \t\\'
+            weird_Json = r'''{"0":["\""],"1":{"2":"\\"}}'''
+            objects = [
+                ('create',      ['-C',{'path':test_path, 'delete_tree_when_done': True }]),
+                ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                ('create',      ['-d',{'path':data_1, 'content':'abc'}]),
+                ('create',      ['-d',{'path':data_2, 'content':'def'}]),
+                ('add_AVU',     ['-d',{'path':data_1, 'avu':('t-d1-attr',weird_String,'zz') }]),  # -- test [#41]
+                ('add_AVU',     ['-d',{'path':data_2, 'avu':('t-d2-attr',weird_Json,'yy') }]),    # -- test [#43]
+                ('sleep_for',   ['',{'seconds':5}]),
+                ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+            ]
+            try:
+                with indexing_plugin__installed():
+                    hit_ = []
+                    func = make_number_of_hits_fcn (hit_)
+                    with self.logical_filesystem_for_indexing (objects,test_session):
+                        # -- find the AVU we set with the JSON string as a value (waiting version, but times out quickly)
+                        self.assertIsNotNone( repeat_until (operator.eq, 1, transform = make_number_of_hits_fcn(hit_))
+                                              (search_index_for_avu_attribute_name)
+                                              (DEFAULT_METADATA_INDEX,'t-d2-attr') )
+                        self.assertTrue( hit_ [0]['hits']['hits'][0]['_source']['value'] == weird_Json )
+                        # -- This test is similar to the previous test, but non-waiting and broken down to the elements:
+                        resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX,'t-d1-attr'))
+                        self.assertEqual (resultCount, 1)
+                        self.assertEqual( weird_String, hit_ [0]['hits']['hits'][0]['_source']['value'] )
+            finally:
+                delete_fulltext_index()
+                delete_metadata_index()
+
+    @contextlib.contextmanager
+    def logical_filesystem_for_indexing(self,objects,session):
+        build_indicator_AVU = lambda index_name, index_type, technology = 'elasticsearch': [
+            "irods::indexing::index",
+            index_name+"::"+index_type,
+            technology
+        ]
+        collections_to_delete = []
+        try:
+            for instruc,data in objects:
+                type_,details_ = data
+                if instruc == 'create':
+                    if type_ == '-C':
+                        session.assert_icommand('imkdir -p {0}'.format(details_['path']))
+                        if details_.get('delete_tree_when_done'): collections_to_delete += [details_['path']]
+                    elif type_ == '-d':
+                        with tempfile.NamedTemporaryFile() as t:
+                            t.write(details_.get('content',''))
+                            t.flush();
+                            session.assert_icommand('iput -f {0} {1}'.format(t.name,details_['path']))
+                elif instruc == 'delete':
+                    session.assert_icommand(['irm', '-rf', details_['path']],'STDOUT','')
+                elif instruc in ('add_AVU','set_AVU','rm_AVU'):
+                    session.assert_icommand(['imeta',instruc.split('_')[0], type_, details_['path']] + list(details_['avu']))
+                elif instruc in ('set_AVU_ind','add_AVU_ind','rm_AVU_ind'):
+                    cmd =  ['imeta',instruc.split('_')[0], '-C',
+                           details_['path'] ] + build_indicator_AVU(details_['index_name'],details_['index_type'])
+                    session.assert_icommand(cmd,'STDOUT','')
+                elif instruc == 'wait_for':
+                    self.assertIsNotNone(repeat_until (operator.eq, True, num_iter=details_['num_iter'], interval=details_['interval'], threshold=details_['threshold']) (type_) (session))
+                elif instruc == 'sleep_for':
+                    sleep(details_['seconds']);
+            yield
+            #    --> control goes to "with" clause after setting up conditions from the 'objects' parameter
+        finally:
+            for p in collections_to_delete:
+                session.assert_icommand(['irm', '-rf', p],'STDOUT','')
+
     def test_indexing_01_basic(self):
         with indexing_plugin__installed():
             sleep(5)
@@ -364,8 +600,8 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                             _,_,rc = admin_session.run_icommand('iput -r {books} {c}/books{i:03}'.format( books=self.book_texts, c=collection, i=n))
                             self.assertTrue(0 == rc, 'recursive iput of books directory')
                             if key == 'metadata':  # ... pick out data object and assign it an AVU
-                                out,_,rc=admin_session.run_icommand('''iquest --no-page '%s/%s' "select COLL_NAME,DATA_NAME where COLL_NAME like'''\
-                                                                    ''' '%/{c}/books{i:03}%'"'''.format(c=collection,i=n))
+                                out,_,rc=admin_session.run_icommand("""iquest --no-page '%s/%s' "select COLL_NAME,DATA_NAME where COLL_NAME like"""\
+                                                                    """ '%/{c}/books{i:03}%'" """.format(c=collection,i=n))
                                 self.assertTrue(rc == 0,'iquest failed')
                                 data_obj_name = filter(any,map(lambda s:s.strip(),out.split('\n')))[0]
                                 attr_j += 1
@@ -391,3 +627,6 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     repeat_until (operator.eq, True, interval=0.1, num_iter=12) (self.delay_queue_is_empty) (admin_session, try_kill = 10.0)
                     delete_metadata_index ('metadata_index')
                     delete_fulltext_index ('full_text_index')
+
+if __name__ == '__main__':
+    unittest.main()
