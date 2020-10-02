@@ -816,6 +816,11 @@ irods::error exec_rule_expression(
                     "supported rule name not found");
         }
     }
+    catch(const  json::parse_error& _e) {
+        rodsLog(LOG_ERROR,"Exception (%s). Could not parse JSON rule text @ FILE %s LINE %d FUNCTION %s ",
+                            _e.what(),__FILE__,__LINE__,__FUNCTION__);
+        return CODE( RULE_ENGINE_CONTINUE);
+    }
     catch(const  std::invalid_argument& _e) {
         return ERROR(
                    SYS_NOT_SUPPORTED,
