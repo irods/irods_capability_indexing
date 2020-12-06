@@ -14,15 +14,11 @@ string(REPLACE "_" "-" PROJECT_NAME_HYPHENS ${PROJECT_NAME})
 project( ${PROJECT_NAME} C CXX)
 include(${IRODS_TARGETS_PATH})
 
+include(GNUInstallDirs)
+
 set(IRODS_PLUGIN_VERSION "${IRODS_VERSION}.${IRODS_PLUGIN_REVISION}")
 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
-if (NOT CPACK_PACKAGING_INSTALL_PREFIX)
-  set(CPACK_PACKAGING_INSTALL_PREFIX "/" CACHE STRING "Package root path. \"/\" is correct for normal package builds.." FORCE)
-  message(STATUS "Setting unspecified CPACK_PACKAGING_INSTALL_PREFIX to '${CPACK_PACKAGING_INSTALL_PREFIX}'. This is the correct setting for normal builds.")
-endif()
-
 
 if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build {Debug, Release}." FORCE)
