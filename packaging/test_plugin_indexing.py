@@ -34,6 +34,8 @@ try:
     long_type = long # Python 2.x
 except NameError: pass
 
+# -----------
+
 # "repeat_until" is a dynamically applied decorator that repeatedly calls the function
 # given to it until that function's return value (or optionally a transform of it)
 # satisfies the given condition.
@@ -81,23 +83,46 @@ def repeat_until (op, value, interval=1.75, num_iter=30,   # Reasonable defaults
         return wrapper
     return deco
 
-# -----------
-# Used as a transform for the "repeat_until" delayed assert fcn
 
-def number_of_hits (json_result, hook = None):
-    struct = json.loads(json_result)
-    if callable(hook): hook(struct)
-    return struct.get('hits',{}).get('total',0)
+# `number_of_hits' can be used as the transform keyword argument in `repeat_until(...)'.
+# Thus if a function F (index_name, A,V,U) returns a json formatted string j indicating an
+# integer number of hits under the 'hits' key, we can do the following:
+#
+# >>> repeater_for_F = repeat_until(operator.gt, N, transform = number_of_hits) (F)
+# >>> result = repeater_for_F (index_name,A,V,U)
+#
+# after which `result' contains either the number of hits on the first iteration of F satisfying
+# the condition, or None in case of timeout.
 
-# Similar. Use as: repeat_until(op,value,transform=number_of_hits_fn(d)...)
-#                                (fn_to_repeat)(args_for__fn_to_repeat...)
-# Place exactly one hit into the list argument 'data_hook', if provided
+def _DEFAULT_EXTRACTOR(struct_):
+    return struct_.get('hits',{}).get('total',0)
 
-def make_number_of_hits_fcn(data_hook = None):
+def number_of_hits (json_string_result, action_hook = None, n_hits_extractor = _DEFAULT_EXTRACTOR):
+    struct = json.loads(json_string_result)
+    if callable(action_hook):
+        action_hook(struct)   # e.g. store the deserialized JSON
+    return n_hits_extractor(struct)
+
+
+# `make_number_of_hits_fcn(d)' returns a function wrapping a call to `number_of_hits', with the side
+# effect of setting the first element of `d' to the deserialized JSON structure last returned from F.
+# Any further elements of `d' are erased. Example use:
+#
+#   >>> d = []
+#   >>> rep_result = repeat_until(operator.ge, 1, transform=number_of_hits_fn(d), ...) (F) (index_name,A,V,U)
+#   >>> if rep_result is not None: print(d[0], 'was the qualifying result')
+#
+# This has the same effect as with the `number_of_hits' example given above, except that the most recent
+# JSON returned by F will be placed (in deserialized form) into d[0].  Note d[0] only qualifies as
+# "satisfying the waited-for condition" if rep_result is not None.
+
+
+def make_number_of_hits_fcn(storage_list = None, extractor = _DEFAULT_EXTRACTOR):
     def insert(result):
-        data_hook[:] = [result]
-    fn = insert if isinstance(data_hook,list) else lambda _:None
-    return lambda js: number_of_hits(js,fn)
+        storage_list[:] = [result]
+    func = insert if isinstance(storage_list,list) else lambda _:None
+    return lambda js: number_of_hits(js, action_hook = func, n_hits_extractor = extractor)
+
 # -----------
 
 SOURCE_BOOKS_URL  = 'https://cdn.patricktriest.com/data/books.zip'
@@ -175,18 +200,29 @@ def indexing_plugin__installed(arg=None):
             pass
 
 
+
 def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEARCH_PORT):
     out,_,rc = lib.execute_command_permissive( dedent("""\
         curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true -d '
         {{
             "from": 0, "size" : 500,
-            "_source" : ["object_path", "attribute", "value", "units"],
+            "_source" : ["absolutePath", "metadataEntries"],
             "query" : {{
-                "term" : {{"attribute" : "{attr_name}"}}
+                "nested": {{
+                  "path": "metadataEntries",
+                  "query": {{
+                    "bool": {{
+                      "must": [
+                        {{ "match": {{ "metadataEntries.attribute": "{attr_name}" }} }}
+                      ]
+                    }}
+                  }}
+                }}
             }}
         }}' """).format(**locals()))
     if rc != 0: out = None
     return out
+
 
 def search_index_for_object_path(index_name, path_component, extra_source_fields="", port = ELASTICSEARCH_PORT):
     path_component_matcher = ("*/" + path_component + ("/*" if not path_component.endswith("$") else "")).rstrip("$")
@@ -194,10 +230,10 @@ def search_index_for_object_path(index_name, path_component, extra_source_fields
         curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true -d '
         {{
             "from": 0, "size" : 500,
-            "_source" : ["object_path" {extra_source_fields} ],
+            "_source" : ["absolutePath" {extra_source_fields} ],
             "query" : {{
                 "wildcard" : {{
-                    "object_path" : {{
+                    "absolutePath" : {{
                         "value" :  "*/{path_component_matcher}"
                     }}
                 }}
@@ -211,8 +247,8 @@ def search_index_for_All_object_paths(index_name, port = ELASTICSEARCH_PORT):
         curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true -d '
         {{
             "from": 0, "size" : 500,
-            "_source" : ["object_path", "data"],
-            "query" : {{ "wildcard": {{ "object_path": {{
+            "_source" : ["absolutePath", "data"],
+            "query" : {{ "wildcard": {{ "absolutePath": {{
                 "value": "*",
                 "boost": 1.0,
                 "rewrite": "constant_score" }} }} }} }}' """).format(**locals()))
@@ -222,13 +258,55 @@ def search_index_for_All_object_paths(index_name, port = ELASTICSEARCH_PORT):
 def create_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_mapping/text ".format(**locals()) +
-                        """ -d '{ "properties" : { "object_path" : { "type" : "keyword" }, "data" : { "type" : "text" } } }'""")
+                        """ -d '{ "properties" : { "absolutePath" : { "type" : "keyword" }, "data" : { "type" : "text" } } }'""")
 
 def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEARCH_PORT):
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_mapping/text ".format(**locals()) +
-                        """ -d '{ "properties" : { "object_path" : { "type" : "keyword" }, "attribute" : { "type" : "keyword" },"""\
-                        """ "value" : { "type" : "keyword" }, "unit" : { "type" : "keyword" } } }'""")
+                        """ -d '{ "properties" : {
+                                "url": {
+                                        "type": "text"
+                                },
+                                "zoneName": {
+                                        "type": "keyword"
+                                },
+                                "absolutePath": {
+                                        "type": "keyword"
+                                },
+                                "fileName": {
+                                        "type": "text"
+                                },
+                                "parentPath": {
+                                        "type": "text"
+                                },
+                                "isFile": {
+                                        "type": "boolean"
+                                },
+                                "dataSize": {
+                                        "type": "long"
+                                },
+                                "mimeType": {
+                                        "type": "keyword"
+                                },
+                                "lastModifiedDate": {
+                                        "type": "date",
+                                        "format": "epoch_millis"
+                                },
+                                "metadataEntries": {
+                                        "type": "nested",
+                                        "properties": {
+                                                "attribute": {
+                                                        "type": "keyword"
+                                                },
+                                                "value": {
+                                                        "type": "text"
+                                                },
+                                                "unit": {
+                                                        "type": "keyword"
+                                                }
+                                        }
+                                }
+                            }}' """)
 
 def delete_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
     lib.execute_command("curl -X DELETE -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
@@ -407,13 +485,13 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                         self.assertTrue( hit_source('data') == 'caveat emptor' )
 
                         _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-d1-attr'))
-                        self.assertTrue( hit_source('object_path') == data_1 )
+                        self.assertTrue( hit_source('absolutePath') == data_1 )
 
                         _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-c1-attr')) # -- test [#42]
-                        self.assertTrue( hit_source('object_path') == coll_1 )
+                        self.assertTrue( hit_source('absolutePath') == coll_1 )
 
                         _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't-post-c0-attr'))
-                        self.assertTrue( hit_source('object_path') == test_path )
+                        self.assertTrue( hit_source('absolutePath') == test_path )
 
                     with self.logical_filesystem_for_indexing( # Wait for the full indexing purge (because of test_path recursive delete) to finish
                                                                [ ('sleep_for',   ['',{'seconds':5}]),
@@ -468,12 +546,13 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                         resultCount = func (search_index_for_object_path(DEFAULT_FULLTEXT_INDEX, 'data1''$', extra_source_fields = ',"data"')) #"data" => get content
                         self.assertEqual (resultCount, 1)
                         self.assertTrue( hit_source('data') == 'carpe diem' )
+# dwm - explicit obj path will be needed when searching index for AVU
                         _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-d1-attr'))
-                        self.assertTrue( hit_source('object_path') == data_1)
+                        self.assertTrue( hit_source('absolutePath') == data_1)
                         _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-c1-attr'))
-                        self.assertTrue( hit_source('object_path') == coll_1)
+                        self.assertTrue( hit_source('absolutePath') == coll_1)
                         _ = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX, 't19-c0-attr'))
-                        self.assertTrue( hit_source('object_path') == test_path)
+                        self.assertTrue( hit_source('absolutePath') == test_path)
 
                         # -- nesting the teardown phase within the overall scope prevents premature deletion of the top-level collection
                         with self.logical_filesystem_for_indexing ([ ('delete',    ['',{'path':data_1}]),
@@ -525,11 +604,11 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                         self.assertIsNotNone( repeat_until (operator.eq, 1, transform = make_number_of_hits_fcn(hit_))
                                               (search_index_for_avu_attribute_name)
                                               (DEFAULT_METADATA_INDEX,'t-d2-attr') )
-                        self.assertTrue( hit_ [0]['hits']['hits'][0]['_source']['value'] == weird_Json )
+                        self.assertTrue( hit_ [0]['hits']['hits'][0]['_source']['metadataEntries'][0]['value'] == weird_Json )
                         # -- This test is similar to the previous test, but non-waiting and broken down to the elements:
                         resultCount = func (search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX,'t-d1-attr'))
                         self.assertEqual (resultCount, 1)
-                        self.assertEqual( weird_String, hit_ [0]['hits']['hits'][0]['_source']['value'] )
+                        self.assertEqual( weird_String, hit_ [0]['hits']['hits'][0]['_source']['metadataEntries'][0]['value'] )
             finally:
                 delete_fulltext_index()
                 delete_metadata_index()

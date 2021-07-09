@@ -25,6 +25,7 @@
 #include <random>
 
 #include "json.hpp"
+#include "cpp_json_kw.hpp"
 
 
 int _delayExec(
@@ -43,6 +44,8 @@ namespace irods {
             , config_(_instance_name) {
         } // indexer
 
+        // -=-=-=-=  Launch a new delayed task to execute index or purge operation
+        // -
         void indexer::schedule_indexing_policy(
             const std::string& _json,
             const std::string& _params) {
@@ -58,6 +61,8 @@ namespace irods {
             }
         } // schedule_indexing_policy
 
+        // -=-=-=-= Does the given AVU exist on the collection of the given name?
+        // -
         bool indexer::metadata_exists_on_collection(
             const std::string& _collection_name,
             const std::string& _attribute,
@@ -66,10 +71,10 @@ namespace irods {
             try {
                 std::string query_str {
                     boost::str(
-                            boost::format("SELECT META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE META_COLL_ATTR_NAME = '%s' and COLL_NAME = '%s'") %
-                            _attribute %
-                            _collection_name) };
+                        boost::format("SELECT META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE META_COLL_ATTR_NAME = '%s' "
+                                      "and COLL_NAME = '%s'") % _attribute % _collection_name) };
                 query<rsComm_t> qobj{rei_->rsComm, query_str, 1};
+
                 if(qobj.size() == 0) {
                     return false;
                 }
@@ -212,22 +217,6 @@ namespace irods {
             return false;
         } // resource_is_indexable
 
-        std::tuple<std::string, std::string>
-        indexer::parse_indexer_string(
-            const std::string& _indexer_string) {
-
-            const auto pos = _indexer_string.find_last_of(indexer_separator);
-            if(std::string::npos == pos) {
-                THROW(
-                   SYS_INVALID_INPUT_PARAM,
-                   boost::format("[%s] does not include an index separator for collection")
-                   % _indexer_string);
-            }
-            const auto index_name = _indexer_string.substr(0, pos-(indexer_separator.size()-1));
-            const auto index_type = _indexer_string.substr(pos+1);
-            return std::make_tuple(index_name, index_type);
-        }
-
         void indexer::schedule_metadata_purge_for_recursive_rm_object( const std::string& logical_path,
                                                                      bool recurse_flag ) {
                             schedule_policy_event_for_object(
@@ -241,12 +230,10 @@ namespace irods {
                                 generate_delay_execution_parameters());
         }
 
-        /*
-        == ////  void indexer::schedule_policy_events_for_collection  ////
-        == Starting at _collection_name , recurse over every sub-element of the tree
-        == (including data objects and collections and starting with the root).
-        == Call schedule_policy_event_for_object for every object or collection
-         */
+        // - Starting at _collection_name , recurse over every sub-element of the tree
+        // - (including data objects and collections and starting with the root).
+        // - Call schedule_policy_event_for_object for every object or collection
+        // -
         void indexer::schedule_policy_events_for_collection(
             const std::string& _operation_type,
             const std::string& _collection_name,
@@ -281,7 +268,6 @@ namespace irods {
                                                    indexing_resources);
                         }
                         if ( ! (is_collection && _index_type == "full_text" )) {
-
                             schedule_policy_event_for_object(
                                 policy_name,
                                 path.string(),
@@ -306,7 +292,7 @@ namespace irods {
         } // schedule_policy_events_for_collection
 
         /*
-        == ////  void indexer::schedule_{INDEX-TYPE}_{INDEX-EVENT}_event ////
+        == ////  void indexer::schedule_{INDEX-TYPE}_{EVENT}_event ////
         ==  for combinations of INDEX-TYPE => ( full_text, metadata )
         ==                  and EVENT      => ( indexing, purge )
         ==
@@ -316,12 +302,14 @@ namespace irods {
             const std::string& _object_path,
             const std::string& _user_name,
             const std::string& _source_resource) {
+
             schedule_policy_events_given_object_path(
                 irods::indexing::operation_type::index,
                 irods::indexing::index_type::full_text,
                 _object_path,
                 _user_name,
                 _source_resource);
+
         } // schedule_full_text_indexing_event
 
         void indexer::schedule_full_text_purge_event(
@@ -374,12 +362,10 @@ namespace irods {
 
         } // schedule_metadata_purge_event
 
-        /*
-        == //// void indexer::schedule_policy_events_given_object_path ////
-        == Given an object path (data object or collection) and an operation name
-        == recurse  upward to find the indices for which policy events must be scheduled
-         */
-
+        // - Given an object path (data object or collection) and an operation type,
+        // - ascend collection hierarchy to find the indices for which policy events
+        // - must be scheduled on the given object path
+        // -
         void indexer::schedule_policy_events_given_object_path(
             const std::string& _operation_type,
             const std::string& _index_type,
@@ -446,7 +432,8 @@ namespace irods {
                                 _attribute,
                                 _value,
                                 _units,
-                                _opt_ID);
+                                {{ "_obj_optional_ID", _opt_ID}} // _extra_options
+                            );
                             processed_indicies.push_back(index_name+index_type);
                         }
                     } // for row
@@ -563,12 +550,17 @@ namespace irods {
             const std::string& _attribute,
             const std::string& _value,
             const std::string& _units,
-            const std::string& obj_optional_ID) {
+            const nlohmann::json & _extra_options // = {}
+        ) {
+
             using json = nlohmann::json;
+
+            const auto & [_ID_bool, _obj_optional_ID] = kws_get<std::string>(_extra_options, "_obj_optional_ID");
+
             json rule_obj;
             rule_obj["rule-engine-operation"]     = _event;
             rule_obj["rule-engine-instance-name"] = config_.instance_name_;
-            rule_obj["object-path"]               = obj_optional_ID.empty() ? _object_path : obj_optional_ID;
+            rule_obj["object-path"]               = _ID_bool && ! (*_obj_optional_ID).empty() ? *_obj_optional_ID : _object_path;
             rule_obj["user-name"]                 = _user_name;
             rule_obj["indexer"]                   = _indexer;
             rule_obj["index-name"]                = _index_name;
