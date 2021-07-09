@@ -6,7 +6,7 @@
 
 namespace irods {
     namespace indexing {
-        const std::string indexer_separator{"::"};
+        // dwm const std::string indexer_separator{"::"};
 
         namespace policy {
             // Policy Naming Examples
@@ -68,6 +68,8 @@ namespace irods {
             std::string minimum_delay_time{"1"};
             std::string maximum_delay_time{"30"};
             std::string delay_parameters{"<EF>60s DOUBLE UNTIL SUCCESS OR 5 TIMES</EF>"};
+            std::string urlTemplate{"http:/{}"};
+
             int log_level{LOG_DEBUG};
 
             const std::string instance_name_{};

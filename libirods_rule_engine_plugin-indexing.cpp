@@ -11,8 +11,11 @@
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include "filesystem.hpp"
 
+#include <irods_log.hpp>
+
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
+#include <boost/core/demangle.hpp>
 
 #undef LIST
 
@@ -22,7 +25,12 @@
 #include <sstream>
 #include <vector>
 #include <tuple>
+#include <map>
 #include <string>
+#include <fmt/format.h>
+
+#include <iterator>
+#include <algorithm>
 
 // =-=-=-=-=-=-=-
 // boost includes
@@ -34,7 +42,14 @@
 #include "json.hpp"
 
 #include "objDesc.hpp"
+
+using namespace std::string_literals;
+
+std::map<std::string,std::string> GlobalIds;
+
 extern l1desc_t L1desc[NUM_L1_DESC];
+
+static bool new_schema = true;
 
 int _delayExec(
     const char *inActionCall,
@@ -44,18 +59,18 @@ int _delayExec(
 
 namespace {
 
+    // objects with visibility in this module only
+
     bool collection_metadata_is_new = false;
     std::unique_ptr<irods::indexing::configuration>     config;
     std::map<int, std::tuple<std::string, std::string>> opened_objects;
 
-    std::map < std::string,
-               std::vector < std::tuple < std::string, // id of   (sub-)coll
-                                          std::string, // path of (sub-)coll
-                                          std::string, /*A*/
-                                          std::string, /*V*/
-                                          std::string  /*U*/ >>> avus_to_purge;
+    const char* rm_force_kw = "*"; // default value tested for in "*_post" PEPs
 
-    const char* rm_force_kw = "*";
+    // -=-=-=  Search for objPath, return L1 desc, Resource name
+    // -
+    // - get_index_and_resource(const dataObjInp_t* _inp)
+    // -
 
     std::tuple<int, std::string>
     get_index_and_resource(const dataObjInp_t* _inp) {
@@ -90,6 +105,12 @@ namespace {
     } // get_object_path_and_resource
 
 #define NULL_PTR_GUARD(x) ((x) == nullptr ? "" : (x))
+
+    // -
+    // -=-=-=  For the various PEP's , setup, schedule and/or initiate indexing policy
+    // -
+    // - apply_indexing_policy (const dataObjInp_t* _inp)
+    // -
 
     void apply_indexing_policy(
         const std::string &    _rn,
@@ -349,6 +370,13 @@ namespace {
                 }
             }
             else if("pep_api_rm_coll_pre"  == _rn) {
+                /**
+                  *   argument spec :
+                  *     <ignored>  <ignored>  <CollInp*> [...?]
+                  *
+                  *   before a collection is deleted. record whether FORCE_FLAG_KW is used.
+                  *
+                  **/
                 auto it = _args.begin();
                 std::advance(it, 2);
                 if(_args.end() == it) {
@@ -361,6 +389,15 @@ namespace {
                 if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_force_kw = p; }
             }
             else if("pep_api_rm_coll_post"  == _rn) {
+
+                /**
+                  *   argument spec :
+                  *     <ignored>  <ignored>  <CollInp*> [...?]
+                  *
+                  *   collection has been deleted successfully. If FORCE_FLAG_KW was used, then purge the
+                  *   from the relevant indexes collection recursively
+                  */
+
                 if ('*' != rm_force_kw[0]) { /* there was a force keyword */
 		    auto it = _args.begin();
 		    std::advance(it, 2);
@@ -375,6 +412,14 @@ namespace {
 		    idx.schedule_metadata_purge_for_recursive_rm_object (  obj_inp->collName );
                 }
             }
+            else if (_rn == "pep_api_atomic_apply_metadata_operations_post") {
+/** debug - print out C++ types in list **/
+		    auto it = _args.begin();
+                    while (it != _args.end()) {
+                      auto ty = (it++)->type().name();
+                      irods::log (LOG_NOTICE, fmt::format("{}",boost::core::demangle(ty)));
+                    }
+            }
         }
         catch(const boost::bad_any_cast& _e) {
             THROW(
@@ -384,6 +429,14 @@ namespace {
                     % __FUNCTION__ % _rn));
         }
     } // apply_indexing_policy
+
+    // -=-=-=-= Invoke policy on object. uses
+    // -
+    // - apply_object_policy (root, obj_path, src_resc, indexer, index_name, index_type)
+    // -
+    // - (1) Composes a policy name from (root , indexer)
+    // - (2) Invokes the policy by that name upon (obj_path, src_resc, index_name, index_type)
+    // -
 
     void apply_object_policy(
         ruleExecInfo_t*    _rei,
@@ -404,6 +457,7 @@ namespace {
         args.push_back(boost::any(_index_type));
         irods::indexing::invoke_policy(_rei, policy_name, args);
 
+
     } // apply_object_policy
 
     void apply_specific_policy(
@@ -420,73 +474,186 @@ namespace {
         args.push_back(boost::any(_source_resource));
         args.push_back(boost::any(_index_name));
         args.push_back(boost::any(_index_type));
-
         irods::indexing::invoke_policy(_rei, _policy_name, args);
 
     } // apply_specific_policy
 
 /***********/
 
+    std::string to_lowercase (const std::string & src)
+    {
+        std::string dst;
+        std::transform(src.begin(),src.end(),
+                       std::back_inserter(dst),
+                       [](wchar_t w) { return tolower(w); } );
+        return dst;
+    }
+
+    auto get_default_Mime_Type (const std::string & input) -> std::string
+    {
+        static std::map <std::string, std::string> default_mimeTypes
+        {
+            {".aac", "audio/aac"},
+            {".abw", "application/x-abiword"},
+            {".arc", "application/x-freearc"},
+            {".avi", "video/x-msvideo"},
+            {".azw", "application/vnd.amazon.ebook"},
+            {".bin", "application/octet-stream"},
+            {".bmp", "image/bmp"},
+            {".bz", "application/x-bzip"},
+            {".bz2", "application/x-bzip2"},
+            {".cda", "application/x-cdf"},
+            {".csh", "application/x-csh"},
+            {".css", "text/css"},
+            {".csv", "text/csv"},
+            {".doc", "application/msword"},
+            {".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+            {".eot", "application/vnd.ms-fontobject"},
+            {".epub", "application/epub+zip"},
+            {".gz", "application/gzip"},
+            {".gif", "image/gif"},
+            {".htm", "text/html"},
+            {".html", "text/html"},
+            {".ico", "image/vnd.microsoft.icon"},
+            {".ics", "text/calendar"},
+            {".jar", "application/java-archive"},
+            {".jpeg", "image/jpeg"},
+            {".jpg", "image/jpeg"},
+            {".js", "text/javascript"},
+            {".json", "application/json"},
+            {".jsonld", "application/ld+json"},
+            {".mid", "audio/midi audio/x-midi"},
+            {".midi", "audio/midi audio/x-midi"},
+            {".mjs", "text/javascript"},
+            {".mp3", "audio/mpeg"},
+            {".mp4", "video/mp4"},
+            {".mpeg", "video/mpeg"},
+            {".mpkg", "application/vnd.apple.installer+xml"},
+            {".odp", "application/vnd.oasis.opendocument.presentation"},
+            {".ods", "application/vnd.oasis.opendocument.spreadsheet"},
+            {".odt", "application/vnd.oasis.opendocument.text"},
+            {".oga", "audio/ogg"},
+            {".ogv", "video/ogg"},
+            {".ogx", "application/ogg"},
+            {".opus", "audio/opus"},
+            {".otf", "font/otf"},
+            {".png", "image/png"},
+            {".pdf", "application/pdf"},
+            {".php", "application/x-httpd-php"},
+            {".ppt", "application/vnd.ms-powerpoint"},
+            {".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
+            {".rar", "application/vnd.rar"},
+            {".rtf", "application/rtf"},
+            {".sh", "application/x-sh"},
+            {".svg", "image/svg+xml"},
+            {".swf", "application/x-shockwave-flash"},
+            {".tar", "application/x-tar"},
+            {".tif", "image/tiff"},
+            {".tiff", "image/tiff"},
+            {".ts", "video/mp2t"},
+            {".ttf", "font/ttf"},
+            {".txt", "text/plain"},
+            {".vsd", "application/vnd.visio"},
+            {".wav", "audio/wav"},
+            {".weba", "audio/webm"},
+            {".webm", "video/webm"},
+            {".webp", "image/webp"},
+            {".woff", "font/woff"},
+            {".woff2", "font/woff2"},
+            {".xhtml", "application/xhtml+xml"},
+            {".xls", "application/vnd.ms-excel"},
+            {".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+            {".xml", "application/xml"}, // if not readable from casual users (RFC 3023, section 3)" else "text/xml"
+            {".xul", "application/vnd.mozilla.xul+xml"},
+            {".zip", "application/zip"},
+            {".3gp", "video/3gpp"}, // audio/3gpp if it doesn't contain video,
+            {".3g2", "video/3gpp2"}, // audio/3gpp2 if it doesn't contain video,
+            {".7z", "application/x-7z-compressed"},
+        };
+        std::string retvalue {};
+        if (auto offs = input.rfind("."); offs != std::string::npos) {
+            retvalue = default_mimeTypes[ to_lowercase(input.substr(offs)) ];
+        }
+        return retvalue.size() ? retvalue : "application/octet-stream";
+    }
+
+    auto get_system_metadata( ruleExecInfo_t* _rei
+                             ,const std::string& _obj_path ) -> nlohmann::json {
+        using nlohmann::json;
+        const boost::filesystem::path p{_obj_path};
+        const std::string parent_name = p.parent_path().string();
+        const std::string name = p.filename().string();
+        namespace fs   = irods::experimental::filesystem;
+        namespace fsvr = irods::experimental::filesystem::server;
+        auto irods_path = fs::path{_obj_path};
+        const auto s = fsvr::status(*_rei->rsComm, irods_path);
+        std::string query_str;
+
+        json obj;
+
+        obj["absolutePath"] = _obj_path;
+
+        if (fsvr::is_data_object(s)) {
+            query_str = fmt::format("SELECT DATA_ID , DATA_MODIFY_TIME, DATA_ZONE_NAME, COLL_NAME, DATA_SIZE where DATA_NAME = '{0}'"
+                                    " and COLL_NAME = '{1}' ", name, parent_name  );
+            irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
+            for (const auto & i:qobj) {
+                obj["lastModifiedDate"] = std::stol( i[1] ) * 1000; // epoch ms
+                obj["zoneName"] = i[2];
+                obj["parentPath"] = i[3];
+                obj["dataSize"] = std::stol( i[4] );
+                obj["isFile"] = true;
+                break;
+            }
+        }
+        else if (fsvr::is_collection(s)) {
+            query_str = fmt::format("SELECT COLL_ID , COLL_MODIFY_TIME, COLL_ZONE_NAME, COLL_PARENT_NAME where COLL_NAME = '{0}'"
+                                    " and COLL_PARENT_NAME = '{1}' ", _obj_path, parent_name  );
+            irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
+            for (const auto & i : qobj) {
+                obj["lastModifiedDate"] = std::stol( i[1] ) * 1000; // epoch ms
+                obj["zoneName"] = i[2];
+                obj["parentPath"] = i[3];
+                obj["dataSize"] = 0L;
+                obj["isFile"] = false;
+                break;
+            }
+        }
+        auto fileName = obj ["fileName"] = irods_path.object_name();
+        obj ["url"] = fmt::format(config->urlTemplate, _obj_path);
+        obj["mimeType"] = get_default_Mime_Type (fileName);  // dwm - Q for Mike : what is mimetype for collections ?
+        return obj;
+
+    } // get_system_metadata
+
     void apply_metadata_policy(
         ruleExecInfo_t*    _rei,
         const std::string& _policy_root,
         const std::string& _object_path,
         const std::string& _indexer,
-        const std::string& _index_name,
-        const std::string& _attribute,
-        const std::string& _value,
-        const std::string& _units) {
-        const std::string policy_name{irods::indexing::policy::compose_policy_name(
-                              _policy_root,
-                              _indexer)};
+        const std::string& _index_name
+        // -- now used only to distinguish between object and avu purges
+        ,const std::string& _attribute
+        ,const std::string& _value
+        ,const std::string& _units
+        )
+    {
+        const std::string policy_name { irods::indexing::policy::compose_policy_name(
+                                          _policy_root,
+                                          _indexer)     };
 
-        if(_attribute.empty() && _value.empty()) {
-            const boost::filesystem::path p{_object_path};
-            const std::string coll_name = p.parent_path().string();
-            const std::string data_name = p.filename().string();
-            std::string query_str;
-            namespace fs   = irods::experimental::filesystem;
-            namespace fsvr = irods::experimental::filesystem::server;
-            const auto s = fsvr::status(*_rei->rsComm,  fs::path{_object_path});
 
-            if (fsvr::is_data_object(s)) {
-                query_str =  boost::str(
-                    boost::format("SELECT META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'")
-                        % data_name
-                        % coll_name);
-            }
-            else if (fsvr::is_collection(s)) {
-                query_str =  boost::str(
-                    boost::format("SELECT META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE COLL_NAME = '%s' ")
-                        % _object_path);
-            }
-            else {
-                rodsLog (LOG_ERROR, "object [%s] in apply_metadata_policy() is not a data_object or collection",_object_path.c_str());
-                return;
-            }
-
-            irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
-
-            for (const auto& result : qobj) {
-                if (config->index == result[0] && fsvr::is_collection(s)) { continue; }
-                std::list<boost::any> args;
-                args.push_back(boost::any(_object_path));
-                args.push_back(boost::any(result[0]));
-                args.push_back(boost::any(result[1]));
-                args.push_back(boost::any(result[2]));
-                args.push_back(boost::any(_index_name));
-                irods::indexing::invoke_policy(_rei, policy_name, args);
-            }
-        }
-        else {
             std::list<boost::any> args;
             args.push_back(boost::any(_object_path));
-            args.push_back(boost::any(_attribute));
-            args.push_back(boost::any(_value));
-            args.push_back(boost::any(_units));
+            args.push_back(boost::any(_attribute)); // was attr    //   -- not explicit anymore with new schema as AVU's are cataloged
+            args.push_back(boost::any(_value)); // was value   //      within the indexed entry for the object itself
+            args.push_back(boost::any(_units)); // was units   //      As this is now a no-op, we should remove these arguments.
             args.push_back(boost::any(_index_name));
+
+            args.push_back(boost::any( std::string {  get_system_metadata(_rei, _object_path ).dump()  } ));
+
             irods::indexing::invoke_policy(_rei, policy_name, args);
-        }
+
     } // apply_metadata_policy
 
 } // namespace
@@ -497,6 +664,7 @@ irods::error start(
     const std::string& _instance_name ) {
     RuleExistsHelper::Instance()->registerRuleRegex("pep_api_.*");
     config = std::make_unique<irods::indexing::configuration>(_instance_name);
+    GlobalIds["per_object"] = _instance_name; // limit delay jobs per-logical-path to prevent O(N^2) of N rapid-fire AVU's placed on the object
     return SUCCESS();
 } // start
 
@@ -511,6 +679,7 @@ irods::error rule_exists(
     const std::string& _rn,
     bool&              _ret) {
     const std::set<std::string> rules{
+                                    "pep_api_atomic_apply_metadata_operations_post",
                                     "pep_api_data_obj_open_post",
                                     "pep_api_data_obj_create_post",
                                     "pep_api_data_obj_repl_post",
@@ -672,6 +841,9 @@ irods::error exec_rule_expression(
                     user_name.c_str(),
                     NAME_LEN);
 
+                // - implement (full-text?) indexing on an individual object
+                // -     as a delayed task.
+                // -
                 apply_object_policy(
                     rei,
                     irods::indexing::policy::object::index,
@@ -698,6 +870,9 @@ irods::error exec_rule_expression(
                     user_name.c_str(),
                     NAME_LEN);
 
+                // - implement index purge on an individual object
+                // -    as a delayed task.
+                // -
                 apply_object_policy(
                     rei,
                     irods::indexing::policy::object::purge,
@@ -717,6 +892,9 @@ irods::error exec_rule_expression(
         else if(irods::indexing::policy::collection::index ==
                 rule_obj["rule-engine-operation"]) {
 
+            // - launch delayed task to handle indexing events under a collection
+            // -   ( example : a new indexing AVU was placed on the collection )
+            // -
             irods::indexing::indexer idx{rei, config->instance_name_};
             idx.schedule_policy_events_for_collection(
                 irods::indexing::operation_type::index,
@@ -729,6 +907,9 @@ irods::error exec_rule_expression(
         else if(irods::indexing::policy::collection::purge ==
                 rule_obj["rule-engine-operation"]) {
 
+            // - launch delayed task to handle indexing events under a collection
+            // -   ( example : an indexing AVU was removed from the collection )
+            // -
             irods::indexing::indexer idx{rei, config->instance_name_};
             idx.schedule_policy_events_for_collection(
                 irods::indexing::operation_type::purge,
@@ -753,10 +934,11 @@ irods::error exec_rule_expression(
                     irods::indexing::policy::metadata::index,
                     rule_obj["object-path"],
                     rule_obj["indexer"],
-                    rule_obj["index-name"],
-                    rule_obj["attribute"],
-                    rule_obj["value"],
-                    rule_obj["units"]);
+                    rule_obj["index-name"]
+                     , rule_obj["attribute"]
+                     , rule_obj["value"]
+                     , rule_obj["units"]
+                );
             }
             catch(const irods::exception& _e) {
                 printErrorStack(&rei->rsComm->rError);
@@ -780,10 +962,11 @@ irods::error exec_rule_expression(
                     irods::indexing::policy::metadata::purge,
                     rule_obj["object-path"],
                     rule_obj["indexer"],
-                    rule_obj["index-name"],
-                    rule_obj["attribute"],
-                    rule_obj["value"],
-                    rule_obj["units"]);
+                    rule_obj["index-name"]
+                    , rule_obj["attribute"]
+                    , rule_obj["value"]
+                    , rule_obj["units"]
+                    );
             }
             catch(const irods::exception& _e) {
                 printErrorStack(&rei->rsComm->rError);

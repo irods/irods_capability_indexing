@@ -12,11 +12,13 @@
 #include "irods_hasher_factory.hpp"
 #include "MD5Strategy.hpp"
 #include "json.hpp"
+#include "irods_log.hpp"
 
 #include "transport/default_transport.hpp"
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include "filesystem.hpp"
 
+#include "fmt/format.h"
 #include "cpr/api.h"
 #include "cpr/response.h"
 #include "elasticlient/client.h"
@@ -37,6 +39,8 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
+#include <optional>
+
 
 namespace {
 
@@ -262,7 +266,9 @@ namespace {
 
     std::string get_object_index_id(
         ruleExecInfo_t*    _rei,
-        const std::string& _object_path) {
+        const std::string& _object_path,
+        bool *iscoll = nullptr
+    ) {
         boost::filesystem::path p{_object_path};
         std::string coll_name = p.parent_path().string();
         std::string data_name = p.filename().string();
@@ -270,10 +276,12 @@ namespace {
         namespace fsvr = irods::experimental::filesystem::server;
         std::string query_str;
         if (fsvr::is_collection( *_rei->rsComm, fs::path{_object_path} )) {
+            if (iscoll) *iscoll = true;
             query_str = boost::str( boost::format("SELECT COLL_ID WHERE COLL_NAME = '%s'")
                                         % _object_path );
         }
         else {
+            if (iscoll) *iscoll = false;
             query_str = boost::str( boost::format("SELECT DATA_ID WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'")
                                         % data_name
                                         % coll_name );
@@ -296,6 +304,29 @@ namespace {
         }
 
     } // get_object_index_id
+
+    void get_metadata_for_object_index_id(
+        ruleExecInfo_t*    _rei,
+        std::string _obj_id,
+        bool _is_coll,
+        std::optional<nlohmann::json> & _out
+    )
+    {
+        if (!_out || !_out->is_array()) _out = nlohmann::json::array();
+        auto & avus_out = *_out;
+        const std::string query_str = _is_coll ?
+            fmt::format("SELECT META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS"
+                          "WHERE COLL_ID = '{}' ",_obj_id) :
+            fmt::format("SELECT META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS"
+                          " WHERE DATA_ID = '{}' " , _obj_id);
+            irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
+            for (const auto & row : qobj) {
+                if (row[0] == config->index) continue;
+                avus_out  +=  {  { "attribute", row[0] },
+                                 { "value",     row[1] },
+                                 { "unit",      row[2] }  };
+            }
+    } // update_metadata_for_index
 
     void update_object_metadata(
         ruleExecInfo_t*    _rei,
@@ -373,7 +404,7 @@ namespace {
                 std::string payload{
                                 boost::str(
                                 boost::format(
-                                "{ \"object_path\" : \"%s\", \"data\" : \"%s\" }")
+                                "{ \"absolutePath\" : \"%s\", \"data\" : \"%s\" }")
                                 % _object_path
                                 % data)};
 
@@ -520,27 +551,20 @@ namespace {
         const std::string& _attribute,
         const std::string& _value,
         const std::string& _unit,
-        const std::string& _index_name) {
+        const std::string& _index_name,
+        nlohmann::json & obj_meta ) {
 
         try {
+            bool is_coll{};
             elasticlient::Client client{config->hosts_};
-            auto object_id = get_object_index_id( _rei, _object_path);
-            const std::string md_index_id{
-                                  get_metadata_index_id(
-                                      object_id,
-                                      _attribute,
-                                      _value,
-                                      _unit)};
-            std::string payload{
-                            boost::str(
-                            boost::format(
-                            "{ \"object_path\":\"%s\", \"attribute\":\"%s\", \"value\":\"%s\", \"units\":\"%s\" }")
-                            % _object_path
-                            % escape_string( _attribute )
-                            % escape_string( _value )
-                            % escape_string( _unit)       )} ;
+            auto object_id = get_object_index_id( _rei, _object_path, &is_coll);
 
-            const cpr::Response response = client.index(_index_name, "text", md_index_id, payload);
+            std::optional<nlohmann::json> jsonarray;
+            get_metadata_for_object_index_id( _rei, object_id, is_coll, jsonarray );
+            obj_meta ["metadataEntries"] = *jsonarray; // dwm - check
+
+            const cpr::Response response = client.index(_index_name, "text", object_id, obj_meta.dump());
+
             if(response.status_code != 200 && response.status_code != 201) {
                 THROW(
                     SYS_INTERNAL_ERR,
@@ -579,7 +603,8 @@ namespace {
         const std::string& _attribute,
         const std::string& _value,
         const std::string& _unit,
-        const std::string& _index_name) {
+        const std::string& _index_name, const nlohmann::json & = {} )
+    {
 
         try {
             elasticlient::Client client{config->hosts_};
@@ -589,13 +614,7 @@ namespace {
               fsvr::path{_object_path}.is_absolute() ? get_object_index_id( _rei, _object_path)
                                                      :  _object_path
             };
-            const std::string md_index_id{
-                                  get_metadata_index_id(
-                                      object_id,
-                                      _attribute,
-                                      _value,
-                                      _unit)};
-            const cpr::Response response = client.remove(_index_name, "text", md_index_id);
+            const cpr::Response response = client.remove(_index_name, "text", object_id);
             switch(response.status_code) {
                 // either the index has been deleted, or the AVU was cleared unexpectedly
                 case 404:
@@ -704,6 +723,7 @@ irods::error exec_rule(
         return err;
     }
 
+    using nlohmann::json;
     try {
         if(_rn == object_index_policy) {
             auto it = _args.begin();
@@ -723,13 +743,14 @@ irods::error exec_rule(
             const std::string source_resource{ boost::any_cast<std::string>(*it) }; ++it;
             const std::string index_name{ boost::any_cast<std::string>(*it) }; ++it;
 
-            invoke_purge_event_full_text(
+            invoke_indexing_event_full_text(
                 rei,
                 object_path,
                 source_resource,
                 index_name);
         }
-        else if(_rn == metadata_index_policy) {
+        else if(_rn == metadata_index_policy || _rn == metadata_purge_policy) {
+
             auto it = _args.begin();
             const std::string object_path{ boost::any_cast<std::string>(*it) }; ++it;
             const std::string attribute{ boost::any_cast<std::string>(*it) }; ++it;
@@ -737,29 +758,34 @@ irods::error exec_rule(
             const std::string unit{ boost::any_cast<std::string>(*it) }; ++it;
             const std::string index_name{ boost::any_cast<std::string>(*it) }; ++it;
 
-            invoke_indexing_event_metadata(
-                rei,
-                object_path,
-                attribute,
-                value,
-                unit,
-                index_name);
-        }
-        else if(_rn == metadata_purge_policy) {
-            auto it = _args.begin();
-            const std::string object_path{ boost::any_cast<std::string>(*it) }; ++it;
-            const std::string attribute{ boost::any_cast<std::string>(*it) }; ++it;
-            const std::string value{ boost::any_cast<std::string>(*it) }; ++it;
-            const std::string unit{ boost::any_cast<std::string>(*it) }; ++it;
-            const std::string index_name{ boost::any_cast<std::string>(*it) }; ++it;
+            std::string obj_meta_str = "{}";
 
-            invoke_purge_event_metadata(
-                rei,
-                object_path,
-                attribute,
-                value,
-                unit,
-                index_name);
+            if (it != _args.end()) {
+                obj_meta_str =  boost::any_cast<std::string>(*it++);
+            }
+
+            json obj_meta = nlohmann::json::parse(obj_meta_str);
+
+            if (_rn == metadata_purge_policy && attribute.empty()) {  //  purge with AVU by name?
+
+                invoke_purge_event_metadata(         //  delete the indexed entry
+                    rei,
+                    object_path,
+                    attribute,
+                    value,
+                    unit,
+                    index_name);
+            }
+            else {
+                invoke_indexing_event_metadata(      // update the indexed entry
+                    rei,
+                    object_path,
+                    attribute,
+                    value,
+                    unit,
+                    index_name,
+                    obj_meta);
+            }
 
         }
         else if(_rn == "irods_policy_recursive_rm_object_by_path") {
@@ -775,10 +801,10 @@ irods::error exec_rule(
                                     return path_; }) (coll_path);
             // -- "wildcard" must be used even for the exact-path match as delete_by_query evidently won't support "match"
             std::string JtopLevel   = json::parse(
-                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s"}}}})JSON") % escaped_path.c_str())
+                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"absolutePath":{"value":"%s"}}}})JSON") % escaped_path.c_str())
                                       ).dump();
             std::string JsubObject = json::parse(
-                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"object_path":{"value":"%s/*"}}}})JSON") % escaped_path.c_str())
+                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"absolutePath":{"value":"%s/*"}}}})JSON") % escaped_path.c_str())
                                       ).dump();
             if ( recurse_flag == "") { JsubObject = ""  ; }
             for (const std::string & endpt : config->hosts_) {

@@ -4,6 +4,9 @@
 
 namespace irods {
     namespace indexing {
+
+        // -=-=-= exception and error reporting
+
         void exception_to_rerror(
             const irods::exception& _exception,
             rError_t&               _error) {
@@ -43,6 +46,9 @@ namespace irods {
             return ss.str();
         } // collapse_error_stack
 
+
+        // -=-=-=-= invoke policy(action) by name
+
         void invoke_policy(
             ruleExecInfo_t*       _rei,
             const std::string&    _action,
@@ -54,6 +60,17 @@ namespace irods {
                         irods::re_plugin_globals->global_re_mgr,
                         _rei);
             irods::error err = re_ctx_mgr.exec_rule(_action, irods::unpack(_args));
+
+            rodsLog(LOG_NOTICE,"THIS is a WARNING message -- DWM - _action - [%s] - ", _action.c_str());
+            int argNo = 0;
+            try{
+                for (const auto & x: _args)  {
+                   rodsLog(LOG_NOTICE,"\t arg  %d in func %s -> %s ", ++ argNo , __func__,  boost::any_cast<const std::string&>(x).c_str());
+                }
+            } catch (... ) {
+                   rodsLog(LOG_NOTICE," ........... something wrong in translation");
+            }
+
             if(!err.ok()) {
                 if(_rei->status < 0) {
                     std::string msg = collapse_error_stack(_rei->rsComm->rError);
