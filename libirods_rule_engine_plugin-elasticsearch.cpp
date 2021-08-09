@@ -183,6 +183,17 @@ namespace {
 
     // --  end code from old nlohmann::json
 
+    template<class T>
+    auto vector_as_string (const std::vector<T> & v) {
+      std::ostringstream s;
+      bool sep = false;
+      for (const auto & element: v) {
+          s << (sep?",":"") + fmt::format("{}", element);
+          sep = true;
+      }
+      return s.str();
+    }
+
     struct configuration : irods::indexing::configuration {
         std::vector<std::string> hosts_;
         int                      bulk_count_{10};
@@ -793,43 +804,31 @@ irods::error exec_rule(
             auto it = _args.begin();
             const  std::string coll_path{ boost::any_cast<std::string>(*it) };
             std::advance( it, 2 );
-            const std::string recurse_flag = boost::any_cast<std::string>(*it) ;
-            auto escaped_path = ( [] (std::string path_) -> std::string {
-                                    boost::replace_all ( path_,  "\\" , "\\\\");
-                                    boost::replace_all ( path_,  "?" , "\\?");
-                                    boost::replace_all ( path_,  "*" , "\\*");
-                                    return path_; }) (coll_path);
-            // -- "wildcard" must be used even for the exact-path match as delete_by_query evidently won't support "match"
-            std::string JtopLevel   = json::parse(
-                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"absolutePath":{"value":"%s"}}}})JSON") % escaped_path.c_str())
-                                      ).dump();
-            std::string JsubObject = json::parse(
-                                          boost::str(boost::format( R"JSON({"query":{"wildcard":{"absolutePath":{"value":"%s/*"}}}})JSON") % escaped_path.c_str())
-                                      ).dump();
-            if ( recurse_flag == "") { JsubObject = ""  ; }
-            for (const std::string & endpt : config->hosts_) {
-                try {
-                    std::string base_URL { endpt };
-                    base_URL.erase(base_URL.find_last_not_of("/")+1);  // get rid of trailing slash(es)
-                    auto get_indices_URL { base_URL + "/_cat/indices" };
-                    cpr::Response r_ind = cpr::Get(cpr::Url{ get_indices_URL }, cpr::Parameters{{"format", "json"}});
-                    std::vector<std::string> indices;
-                    std::string json_to_parse{ r_ind.text };
-                    auto response_array = json::parse( std::string{json_to_parse} );
-                    std::for_each( response_array.cbegin(),
-                                   response_array.cend(), [&indices](const auto &e){indices.push_back(e["index"]);} );
-                    for (const auto & e : indices) {
-                        const std::string del_by_qu_URL { base_URL + "/" + e + "/_delete_by_query" } ;
-                        for (const std::string &json_out  :{JtopLevel,JsubObject}) {
-                            if (json_out == "") { continue; }
-                            auto r = cpr::Post(cpr::Url{del_by_qu_URL},
-                                         cpr::Body{json_out},
-                                         cpr::Header{{"Content-Type", "application/json"}});
-                        }
+            const json recurse_info = json::parse(boost::any_cast<std::string>(*it));
+            auto escaped_path = ([] (std::string path_) -> std::string {
+                                   boost::replace_all ( path_,  "\\" , "\\\\");
+                                   boost::replace_all ( path_,  "?" , "\\?");
+                                   boost::replace_all ( path_,  "*" , "\\*"); return path_; }) (coll_path);
+            std::string JtopLevel  = json::parse(
+                                          boost::str(boost::format( R"JSON({"query":{"match":{"absolutePath":"%s"}}})JSON") % escaped_path.c_str())
+                                     ).dump();
+            std::string JsubObject = recurse_info["is_collection"] ? json::parse(
+                                                                     boost::str(boost::format( R"JSON({"query":{"wildcard":{"absolutePath":{"value":"%s/*"}}}})JSON")
+                                                                                % escaped_path.c_str())).dump()
+                                                                   : "";
+            elasticlient::Client client { config->hosts_ };
+            try {
+                rsComm_t& comm = *rei->rsComm;
+                for (const std::string & e : recurse_info["indices"]) {
+                    const std::string del_by_query_URL { e + "/_delete_by_query" } ;
+                    for (const std::string &json_out  :{JtopLevel,JsubObject}) {
+                        if (json_out == "") { continue; }
+                        auto r = client.performRequest( elasticlient::Client::HTTPMethod::POST, del_by_query_URL, json_out);
                     }
-                } catch (nlohmann::json::parse_error & e) { 
-                    rodsLog(LOG_NOTICE, "Cannot reach elasticsearch on : %s" , endpt.c_str());
                 }
+            } catch (nlohmann::json::parse_error & e) {
+                auto hosts_list = vector_as_string( config->hosts_ );
+                rodsLog(LOG_NOTICE, "Cannot reach elasticsearch on : <%s>", hosts_list.c_str());
             }
         } // "irods_policy_recursive_rm_object_by_path"
         else {
