@@ -23,6 +23,7 @@
 // stl includes
 #include <iostream>
 #include <sstream>
+#include <set>
 #include <vector>
 #include <tuple>
 #include <map>
@@ -61,11 +62,47 @@ namespace {
 
     // objects with visibility in this module only
 
+    std::set<std::string> indices_for_rm_coll;
     bool collection_metadata_is_new = false;
     std::unique_ptr<irods::indexing::configuration>     config;
     std::map<int, std::tuple<std::string, std::string>> opened_objects;
 
     const char* rm_force_kw = "*"; // default value tested for in "*_post" PEPs
+
+    auto get_indices_for_delete_by_query (rsComm_t& comm, const std::string &_object_name, bool recurs) -> std::set<std::string>
+    {
+        using irods::indexing::parse_indexer_string;
+        std::set<std::string> indices;
+        namespace fs   = irods::experimental::filesystem;
+        namespace fsvr = irods::experimental::filesystem::server;
+        using     fsp  = fs::path;
+        fsp node {_object_name}, up_node {_object_name};
+        auto coll_name {_object_name};
+        auto myQuery = [&]{
+            irods::query q { &comm, fmt::format("select META_COLL_ATTR_VALUE where "
+                                                "META_COLL_ATTR_NAME = '{}' and COLL_NAME = '{}'",
+                                                config->index,coll_name) };
+            for (const auto &row : q) {
+                std::string index_name = std::get<0>(parse_indexer_string(row[0]));
+                indices.insert( index_name );
+            }
+        };
+        while (!up_node.empty()) {
+            coll_name = up_node.string();
+            if (fsvr::is_collection(comm,up_node)) { myQuery(); }
+            up_node = up_node.parent_path();
+            if (0 == up_node.compare(node.root_collection())) { break; }
+        }
+        if (recurs) {
+            auto iter_end = fsvr::recursive_collection_iterator{};
+            auto iter =  fsvr::recursive_collection_iterator{comm, _object_name};
+            for (; iter != iter_end ; ++iter) {
+                coll_name = iter->path().string();
+                if (fsvr::is_collection(comm,*iter)) { myQuery(); }
+            }
+        }
+        return indices;
+    }
 
     // -=-=-=  Search for objPath, return L1 desc, Resource name
     // -
@@ -354,6 +391,7 @@ namespace {
                 }
                 const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
                 if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_force_kw = p; }
+                indices_for_rm_coll = get_indices_for_delete_by_query (*_rei->rsComm, obj_inp->objPath, false);
             }
             else if("pep_api_data_obj_unlink_post" == _rn) {
                 auto it = _args.begin();
@@ -366,7 +404,9 @@ namespace {
                 const auto obj_inp = boost::any_cast<dataObjInp_t*>(*it);
                 if ('*' != rm_force_kw[0]) { /* there was a force keyword */
                     irods::indexing::indexer idx{_rei, config->instance_name_};
-                    idx.schedule_metadata_purge_for_recursive_rm_object (  obj_inp->objPath , false);
+                    nlohmann::json recurseInfo {{"is_collection",false}};
+                    recurseInfo["indices"] = indices_for_rm_coll;
+                    idx.schedule_metadata_purge_for_recursive_rm_object (obj_inp->objPath, recurseInfo);
                 }
             }
             else if("pep_api_rm_coll_pre"  == _rn) {
@@ -387,6 +427,7 @@ namespace {
                 CollInp*obj_inp = nullptr;
                 obj_inp = boost::any_cast<CollInp*>(*it);
                 if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_force_kw = p; }
+                indices_for_rm_coll = get_indices_for_delete_by_query( *_rei->rsComm, obj_inp->collName, true );
             }
             else if("pep_api_rm_coll_post"  == _rn) {
 
@@ -399,22 +440,24 @@ namespace {
                   */
 
                 if ('*' != rm_force_kw[0]) { /* there was a force keyword */
-		    auto it = _args.begin();
-		    std::advance(it, 2);
-		    if(_args.end() == it) {
-			THROW(
-			    SYS_INVALID_INPUT_PARAM,
-			    "invalid number of arguments");
-		    }
-		    CollInp* obj_inp = nullptr;
-		    obj_inp = boost::any_cast<CollInp*>(*it);
-		    irods::indexing::indexer idx{_rei, config->instance_name_};
-		    idx.schedule_metadata_purge_for_recursive_rm_object (  obj_inp->collName );
+                    auto it = _args.begin();
+                    std::advance(it, 2);
+                    if(_args.end() == it) {
+                        THROW(
+                            SYS_INVALID_INPUT_PARAM,
+                            "invalid number of arguments");
+                    }
+                    CollInp* obj_inp = nullptr;
+                    obj_inp = boost::any_cast<CollInp*>(*it);
+                    irods::indexing::indexer idx{_rei, config->instance_name_};
+                    nlohmann::json recurseInfo = {{"is_collection",true}};
+                    recurseInfo["indices"] = indices_for_rm_coll;
+                    idx.schedule_metadata_purge_for_recursive_rm_object(obj_inp->collName, recurseInfo);
                 }
             }
             else if (_rn == "pep_api_atomic_apply_metadata_operations_post") {
 /** debug - print out C++ types in list **/
-		    auto it = _args.begin();
+                    auto it = _args.begin();
                     while (it != _args.end()) {
                       auto ty = (it++)->type().name();
                       irods::log (LOG_NOTICE, fmt::format("{}",boost::core::demangle(ty)));
@@ -655,6 +698,7 @@ namespace {
             irods::indexing::invoke_policy(_rei, policy_name, args);
 
     } // apply_metadata_policy
+
 
 } // namespace
 
