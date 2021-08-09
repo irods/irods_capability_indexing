@@ -21,7 +21,7 @@ namespace irods {
                 const std::string& _instance_name);
 
             void schedule_metadata_purge_for_recursive_rm_object( const std::string& logical_path,
-                                                                bool recurse_flag = true) ;
+                                                                  const nlohmann::json & recurse_info);
 
             void schedule_indexing_policy(
                 const std::string& _json,

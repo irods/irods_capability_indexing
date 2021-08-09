@@ -218,14 +218,14 @@ namespace irods {
         } // resource_is_indexable
 
         void indexer::schedule_metadata_purge_for_recursive_rm_object( const std::string& logical_path,
-                                                                     bool recurse_flag ) {
+                                                                       const nlohmann::json & recurse_info ) {
                             schedule_policy_event_for_object(
                                 /*policy_name, */ "irods_policy_recursive_rm_object_by_path",
                                 logical_path,
                                 /*_user_name,*/ "",
                                 EMPTY_RESOURCE_NAME,
                                 /* _indexer, */    "elasticsearch",
-                                /* recurse_flag instead of _index_name, */ recurse_flag ? "recursive" : "",
+                                recurse_info.dump(),
                                 /* _index_type, */ "metadata",
                                 generate_delay_execution_parameters());
         }
