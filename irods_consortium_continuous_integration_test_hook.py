@@ -24,14 +24,15 @@ def get_build_prerequisites_all():
 
 def get_build_prerequisites_apt():
     pre_reqs = ['uuid-dev', 'libssl-dev', 'libsasl2-2', 'libsasl2-dev', 'python-dev']
-    pre_reqs += ['openjdk-8-jre','curl']
+    pre_reqs += ['openjdk-8-jre','curl', 'python3-pip']
     return get_build_prerequisites_all()+pre_reqs
 
 def get_build_prerequisites_yum():
-    return get_build_prerequisites_all()+['which', 'java-1.8.0-openjdk-devel', 'libuuid-devel', 'openssl-devel', 'cyrus-sasl-devel', 'python-devel']
+    return get_build_prerequisites_all()+['which', 'java-1.8.0-openjdk-devel', 'libuuid-devel', 'openssl-devel', 'cyrus-sasl-devel', 'python-devel',
+                                          'python3-pip']
 
 def get_build_prerequisites_zypper():
-    return get_build_prerequisites_all()+['which', 'java-1_8_0-openjdk-devel','curl']
+    return get_build_prerequisites_all()+['which', 'java-1_8_0-openjdk-devel','curl', 'python3-pip']
 
 def get_build_prerequisites():
     dispatch_map = {
