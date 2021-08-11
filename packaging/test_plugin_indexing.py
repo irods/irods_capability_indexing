@@ -6,6 +6,7 @@ import contextlib
 import tempfile
 import json
 import re
+import platform
 import os.path
 
 import zipfile
@@ -209,6 +210,35 @@ def indexing_plugin__installed(indexing_config=()):
             pass
 
 
+class Create_Virtualenv_Exception (Exception):
+    def __init__(self,script_return_code,*a,**kw):
+        super(Create_Virtualenv_Exception,self).__init__(*a,**kw)
+        self.script_return_code = script_return_code
+
+def install_python3_virtualenv_with_python_irodsclient(PATH='~/py3',preTestPRCInstall=True):
+    PATH = os.path.expanduser(PATH)
+    rc = 0
+    if preTestPRCInstall:
+        rc = -1
+        out,_,rc = lib.execute_command_permissive( dedent("""\
+                . '{PATH}'/bin/activate ; cd ${{HOME}} ;  python -c 'import irods.manager; import remote_pdb'
+                """.format(**locals())),use_unsafe_shell=True)
+    if 0 != rc:
+        os_dist = platform.dist()
+        if os_dist[0].lower() == 'ubuntu' and os_dist[1] < '18.04':
+            PIP_VERSION_LIMIT = "<21.0"
+        else:
+            PIP_VERSION_LIMIT = ""
+        out,_,rc = lib.execute_command_permissive( dedent("""\
+                python3 -m pip install --user --upgrade pip'{PIP_VERSION_LIMIT}' && \\
+                python3 -m pip install --user virtualenv && \\
+                python3 -m virtualenv -p python3 '{PATH}' && \\
+                . '{PATH}'/bin/activate && \\
+                python -m pip install remote_pdb python-irodsclient""".format(**locals())),use_unsafe_shell=True)
+        if rc != 0: raise Create_Virtualenv_Exception(script_return_code = rc)
+    return PATH
+
+
 # Assuming use for metadata style of index only
 
 def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEARCH_PORT):
@@ -340,11 +370,19 @@ def delete_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEA
 
 debugFileName = None # -- or for example: "/tmp/debug.txt"  # -- for logging debug
 
+
 class TestIndexingPlugin(ResourceBase, unittest.TestCase):
+
+    def test_01(self):
+        pass
 
     @classmethod
     def setUpClass(cls):
         cls.book_texts = get_source_books( instance = cls, attr = 'Books_Dir' )
+        cls.venv_dir = install_python3_virtualenv_with_python_irodsclient(PATH='~/py3')
+        #import remote_pdb
+        #remote_pdb.RemotePdb('localhost',8000).set_trace()
+        #pass
 
     @classmethod
     def tearDownClass(cls):
@@ -734,6 +772,49 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
         finally:
             for p in collections_to_delete:
                 session.assert_icommand(['irm', '-rf', p],'STDOUT','')
+
+    def test_indexing_with_atomic_metadata_ops_66(self):
+        with indexing_plugin__installed():
+            test_coll = 'testcoll_66'
+            create_metadata_index (DEFAULT_METADATA_INDEX)
+            try:
+                with session.make_session_for_existing_admin() as admin_session:
+                    self.remove_all_jobs_from_delay_queue(admin_session)
+                    admin_session.assert_icommand('imkdir -p {0}'.format(test_coll))
+                    admin_session.assert_icommand("""imeta set -C {0} irods::indexing::index {1}::metadata elasticsearch""".format(
+                                                  test_coll,DEFAULT_METADATA_INDEX))
+                    admin_session.assert_icommand("itouch {0}/testobj".format(test_coll))
+
+                    if debugFileName: debugPrt = lambda *a,**k: print(*a,file=open(debugFileName,'a'),**k)
+                    else:             debugPrt = lambda *a,**k: None
+
+                    # Add metadata using atomic metadata API, wait until jobs disappear and check results
+                    # Also note: changing cwd to $HOME first to avoid picking up ~/scripts/irods as a package dir.
+                    admin_session.assert_icommand("""cd ${{HOME}} ;  python3 ~/scripts/irods/test/atomic_metadata_ops.py -v {self.venv_dir} """
+                                                  """ '/{0.zone_name}/home/{0.username}'/{test_coll}/testobj ADD ab bc cd ADD xy yz '' """.format(
+                                                  admin_session,**locals()),use_unsafe_shell=True)
+                    self.assertIsNotNone ( repeat_until (operator.eq, True) (self.delay_queue_is_empty) (admin_session) )
+                    self.assertIsNotNone (
+                        repeat_until (operator.eq, 1, transform = number_of_hits, debugPrinter = debugPrt)
+                                          (search_index_for_avu_attribute_name)
+                                          (DEFAULT_METADATA_INDEX, 'ab')
+                    )
+
+                    # Remove metadata using atomic metadata API, wait until jobs disappear and check results
+                    admin_session.assert_icommand("""python3 ~/scripts/irods/test/atomic_metadata_ops.py -v {self.venv_dir} """
+                                                  """ '/{0.zone_name}/home/{0.username}'/{test_coll}/testobj REMOVE ab bc cd""".format(
+                                                  admin_session,**locals()),use_unsafe_shell=True)
+                    self.assertIsNotNone ( repeat_until (operator.eq, True) (self.delay_queue_is_empty) (admin_session) )
+                    self.assertIsNotNone (
+                        repeat_until (operator.eq, 0, transform = number_of_hits, debugPrinter = debugPrt)
+                                          (search_index_for_avu_attribute_name)
+                                          (DEFAULT_METADATA_INDEX, 'ab')
+                    )
+            finally:
+                with session.make_session_for_existing_admin() as admin_session:
+                    admin_session.assert_icommand('irm -fr {0}'.format(test_coll))
+                delete_metadata_index (DEFAULT_METADATA_INDEX)
+
 
     def test_indexing_01_basic(self):
         with indexing_plugin__installed():
