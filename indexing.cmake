@@ -66,6 +66,7 @@ install(
 install(
   FILES
   ${CMAKE_SOURCE_DIR}/packaging/test_plugin_indexing.py
+  ${CMAKE_SOURCE_DIR}/packaging/atomic_metadata_ops.py
   DESTINATION ${IRODS_HOME_DIRECTORY}/scripts/irods/test
   PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
   COMPONENT ${IRODS_PACKAGE_COMPONENT_POLICY_NAME}
