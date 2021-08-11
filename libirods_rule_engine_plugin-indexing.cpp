@@ -32,6 +32,7 @@
 
 #include <iterator>
 #include <algorithm>
+#include <typeinfo>
 
 // =-=-=-=-=-=-=-
 // boost includes
@@ -52,6 +53,8 @@ extern l1desc_t L1desc[NUM_L1_DESC];
 
 static bool new_schema = true;
 
+
+
 int _delayExec(
     const char *inActionCall,
     const char *recoveryActionCall,
@@ -60,7 +63,13 @@ int _delayExec(
 
 namespace {
 
-    // objects with visibility in this module only
+    // For handling of atomic metadata ops
+
+    using metadata_tuple = std::tuple<std::string, std::string, std::string>;
+    std::map <std::string, std::set<metadata_tuple>> atomic_metadata_tuples {};
+    std::string atomic_metadata_obj_path {};
+
+    // Other objects with visibility in this module only
 
     std::set<std::string> indices_for_rm_coll;
     bool collection_metadata_is_new = false;
@@ -455,12 +464,65 @@ namespace {
                     idx.schedule_metadata_purge_for_recursive_rm_object(obj_inp->collName, recurseInfo);
                 }
             }
-            else if (_rn == "pep_api_atomic_apply_metadata_operations_post") {
-/** debug - print out C++ types in list **/
+            else if (_rn == "pep_api_atomic_apply_metadata_operations_pre"
+                  || _rn == "pep_api_atomic_apply_metadata_operations_post")
+            {
+                    using nlohmann::json;
+                    auto pos = _rn.rfind("_p");
+                    auto when = _rn.substr(pos + 1); // "pre" or "post"
                     auto it = _args.begin();
-                    while (it != _args.end()) {
-                      auto ty = (it++)->type().name();
-                      irods::log (LOG_NOTICE, fmt::format("{}",boost::core::demangle(ty)));
+                    std::advance(it, 2);
+
+                    auto request = boost::any_cast<BytesBuf*>(*it);
+                    std::string requ_str {(const char*)request->buf,unsigned(request->len)};
+                    const auto & requ_json = json::parse( requ_str );
+
+                    std::string obj_path = requ_json["entity_name"]; // logical path
+                    std::string obj_type = requ_json["entity_type"]; // "data_object" or "collection"
+                    if ("pre" == when) {
+                        atomic_metadata_obj_path = obj_path;
+                    }
+                    else {
+                        if (atomic_metadata_obj_path != obj_path) {
+                            THROW( SYS_INVALID_INPUT_PARAM, fmt::format("invalid object path for {} operation",_rn));
+                        }
+                    }
+                    auto & map = atomic_metadata_tuples[ when ];
+
+                    namespace fs = irods::experimental::filesystem;
+                    std::string dobj_name {fs::path{obj_path}.object_name()};
+                    std::string dobj_parent {fs::path{obj_path}.parent_path()};
+
+                    auto query_str = fmt::format( "SELECT META_{0}_ATTR_NAME, META_{0}_ATTR_VALUE, META_{0}_ATTR_UNITS where {0}_NAME = '{1}'",
+                                                  (obj_type == "collection" ? "COLL" : "DATA"),
+                                                  (obj_type == "collection" ? obj_path : dobj_name) );
+                    if (obj_type != "collection") {
+                        query_str += fmt::format (" and COLL_NAME = '{}'", dobj_parent);
+                    }
+
+                    irods::query<rsComm_t> qobj {_rei->rsComm, query_str};
+
+                    for (const auto & row : qobj) {
+                        map.insert( {row[0],row[1],row[2]} );
+                    }
+                    if (when == "post") {
+                        std::vector<metadata_tuple> avus_added_or_removed;
+                        const auto & pre_map = atomic_metadata_tuples[ "pre" ];
+                        set_symmetric_difference (  pre_map.begin(), pre_map.end(),
+                                                    map.cbegin(), map.cend(),  std::back_inserter(avus_added_or_removed));
+                        //dwm-
+                        for (const auto & [attribute, value, units] : avus_added_or_removed) {
+                            if (attribute != config->index) {
+                                irods::indexing::indexer idx{_rei, config->instance_name_};
+                                idx.schedule_metadata_indexing_event(
+                                        obj_path,
+                                        _rei->rsComm->clientUser.userName,
+                                        attribute,
+                                        value,
+                                        units);
+                                break;
+                            }
+                        }
                     }
             }
         }
@@ -723,6 +785,7 @@ irods::error rule_exists(
     const std::string& _rn,
     bool&              _ret) {
     const std::set<std::string> rules{
+                                    "pep_api_atomic_apply_metadata_operations_pre",
                                     "pep_api_atomic_apply_metadata_operations_post",
                                     "pep_api_data_obj_open_post",
                                     "pep_api_data_obj_create_post",
