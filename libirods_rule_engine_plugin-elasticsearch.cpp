@@ -44,6 +44,41 @@
 
 namespace {
 
+    using HTTPMethod = elasticlient::Client::HTTPMethod;
+
+    namespace ES {
+
+        cpr::Response index (const std::string & version,
+                             elasticlient::Client &cl,
+                             const std::string & index_name,
+                             const std::string & mapping_type,
+                             const std::string & doc_id,
+                             const std::string & body)
+        {
+            if (version < "7.")
+                return cl.index (index_name, mapping_type, doc_id, body);
+            else
+                return cl.performRequest (HTTPMethod::PUT,
+                                        index_name + "/_doc/" + doc_id,
+                                        body);
+        }
+
+        cpr::Response remove (const std::string & version,
+                              elasticlient::Client &cl,
+                              const std::string & index_name,
+                              const std::string & mapping_type,
+                              const std::string & doc_id)
+        {
+            if (version < "7.")
+                return cl.remove (index_name, mapping_type, doc_id);
+            else
+                return cl.performRequest (HTTPMethod::DELETE,
+                                        index_name + "/_doc/" + doc_id,
+                                        "");
+        }
+
+    } // namespace ES
+
     using string_t = std::string;
 
     // -- begin code from old nlohmann::json
@@ -198,6 +233,7 @@ namespace {
         std::vector<std::string> hosts_;
         int                      bulk_count_{10};
         int                      read_size_{4194304};
+        std::string              es_version_{"7."};
         configuration(const std::string& _instance_name) :
             irods::indexing::configuration(_instance_name) {
             try {
@@ -207,6 +243,10 @@ namespace {
                     for( auto& i : host_list) {
                         hosts_.push_back(boost::any_cast<std::string>(i));
                     }
+                }
+
+                if(cfg.find("es_version") != cfg.end()) {
+                    es_version_ = boost::any_cast<std::string>(cfg.at("es_version"));
                 }
 
                 if(cfg.find("bulk_count") != cfg.end()) {
@@ -574,7 +614,7 @@ namespace {
             get_metadata_for_object_index_id( _rei, object_id, is_coll, jsonarray );
             obj_meta ["metadataEntries"] = *jsonarray; // dwm - check
 
-            const cpr::Response response = client.index(_index_name, "text", object_id, obj_meta.dump());
+            const cpr::Response response = ES::index(config->es_version_, client, _index_name, "text", object_id, obj_meta.dump());
 
             if(response.status_code != 200 && response.status_code != 201) {
                 THROW(
@@ -625,7 +665,7 @@ namespace {
               fsvr::path{_object_path}.is_absolute() ? get_object_index_id( _rei, _object_path)
                                                      :  _object_path
             };
-            const cpr::Response response = client.remove(_index_name, "text", object_id);
+            const cpr::Response response = ES::remove(config->es_version_, client, _index_name, "text", object_id);
             switch(response.status_code) {
                 // either the index has been deleted, or the AVU was cleared unexpectedly
                 case 404:
@@ -821,9 +861,11 @@ irods::error exec_rule(
                 rsComm_t& comm = *rei->rsComm;
                 for (const std::string & e : recurse_info["indices"]) {
                     const std::string del_by_query_URL { e + "/_delete_by_query" } ;
-                    for (const std::string &json_out  :{JtopLevel,JsubObject}) {
+                    for (const std::string &json_out: {JtopLevel,JsubObject}) {
                         if (json_out == "") { continue; }
-                        auto r = client.performRequest( elasticlient::Client::HTTPMethod::POST, del_by_query_URL, json_out);
+                        auto r = client.performRequest( HTTPMethod::POST, del_by_query_URL, json_out);
+
+                        // dwm - need to check response !!
                     }
                 }
             } catch (nlohmann::json::parse_error & e) {

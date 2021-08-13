@@ -71,7 +71,7 @@ class WrongNumberOfGlobResults (RuntimeError): pass
 def install_indexing_engine (indexing_engine):
     if 'elasticsearch' in indexing_engine.lower():
         tempdir = tempfile.mkdtemp()
-        url = 'https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-6.8.8.tar.gz'
+        url = 'https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.4.2-linux-x86_64.tar.gz'
         irods_python_ci_utilities.subprocess_get_output(['wget', url])
         tar_names = [x for x in url.split('/') if '.tar' in x]
         irods_python_ci_utilities.subprocess_get_output(['tar', '-C', tempdir, '--no-same-owner', '-xvzf', tar_names[-1]])
