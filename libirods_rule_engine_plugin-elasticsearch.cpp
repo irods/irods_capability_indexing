@@ -488,6 +488,18 @@ namespace {
                 bulk.clear();
             }
         }
+        catch(const irods::exception& _e) {
+            rodsLog(
+                LOG_ERROR,
+                "Exception [%s]",
+                _e.what());
+            auto irods_error = _e.code();
+            if (irods_error != CAT_NO_ROWS_FOUND) {
+                THROW(
+                    irods_error,
+                    _e.what());
+            }
+        }
         catch(const std::runtime_error& _e) {
             rodsLog(
                 LOG_ERROR,
@@ -626,6 +638,18 @@ namespace {
                     % _object_path
                     % response.status_code
                     % response.text);
+            }
+        }
+        catch(const irods::exception& _e) {
+            rodsLog(
+                LOG_ERROR,
+                "Exception [%s]",
+                _e.what());
+            auto irods_error = _e.code();
+            if (irods_error != CAT_NO_ROWS_FOUND) {
+                THROW(
+                    irods_error,
+                    _e.what());
             }
         }
         catch(const std::runtime_error& _e) {

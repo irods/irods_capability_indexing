@@ -5,6 +5,7 @@ import shutil
 import contextlib
 import tempfile
 import json
+import re
 import os.path
 
 import zipfile
@@ -168,23 +169,26 @@ def es7_exactly (): return '8.' > ES_VERSION >= '7.'
 def es7_or_later(): return ES_VERSION >= '7.'
 
 @contextlib.contextmanager
-def indexing_plugin__installed(arg=None):
+def indexing_plugin__installed(indexing_config=()):
     filename = paths.server_config_path()
     with lib.file_backed_up(filename):
         irods_config = IrodsConfig()
         irods_config.server_config['advanced_settings']['rule_engine_server_sleep_time_in_seconds'] = 5
+
+        indexing_plugin_specific_config = {} # hard-wired configuration entries could go here
+        indexing_plugin_specific_config.update( indexing_config )
+
         irods_config.server_config['plugin_configuration']['rule_engines'][:0] = [
             {
                 "instance_name": "irods_rule_engine_plugin-indexing-instance",
                 "plugin_name": "irods_rule_engine_plugin-indexing",
-                "plugin_specific_configuration": {
-                }
+                "plugin_specific_configuration": indexing_plugin_specific_config
             },
             {
                 "instance_name": "irods_rule_engine_plugin-elasticsearch-instance",
                 "plugin_name": "irods_rule_engine_plugin-elasticsearch",
                 "plugin_specific_configuration": {
-                    "hosts" : ["http://localhost:9100/"],
+                    "hosts" : ["http://localhost:{}/".format(ELASTICSEARCH_PORT)],
                     "bulk_count" : 100,
                     "read_size" : 4194304,
                     "es_version" : ES_VERSION
@@ -275,6 +279,7 @@ def create_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEA
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
     lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_mapping/text{OPTION} ".format(**locals()) +
                         """ -d '{ "properties" : { "absolutePath" : { "type" : "keyword" }, "data" : { "type" : "text" } } }'""")
+    return index_name
 
 def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEARCH_PORT):
     OPTION = "" if es7_or_later() else "/text"               #--> switch away from 'text' mapping if using >= ES7
@@ -324,6 +329,7 @@ def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEA
                                         }
                                 }
                             }}' """)
+    return index_name
 
 def delete_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
     lib.execute_command("curl -X DELETE -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
@@ -423,6 +429,64 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     admin_session.assert_icommand('irm -fr {collection}'.format(**locals()))
                     delete_fulltext_index()
 
+
+    @staticmethod
+    def digits_at_front_of_string(x):
+        y = re.match('(^\d+)',x)
+        return "" if y is None else y.groups()[0]
+
+    @staticmethod
+    def active_task_ids(session,self_):
+        rc,iqstat_output,_ = session.assert_icommand('iqstat', 'STDOUT')
+        self_.assertEqual( rc, 0 )
+        return set(filter(None,map(self_.digits_at_front_of_string, iqstat_output.split('\n'))))
+
+    def test_graceful_handling_of_premature_deletion_62(self):
+        test_path = ""
+        indices=()
+        jobs_before_delete = []
+        jobs_after_delete = []
+        try:
+            indices = (
+              create_metadata_index(DEFAULT_METADATA_INDEX),
+              create_fulltext_index(DEFAULT_FULLTEXT_INDEX)
+            )
+            with indexing_plugin__installed(indexing_config={'minimum_delay_time':'20', 'maximum_delay_time':'23'}):
+                with session.make_session_for_existing_admin() as admin_session:
+                    test_session = admin_session
+                    List_Active_Task_IDs = lambda : self.active_task_ids(test_session,self)
+                    path_to_home = '/{0.zone_name}/home/{0.username}'.format(test_session)
+                    test_path = path_to_home + "/test_issue_62"
+                    data_1 = test_path + "/data1-post"
+                    setup = [
+                        # - create the items to be indexed
+                        ('create',      ['-C',{'path':test_path, 'delete_tree_when_done': False }]),
+                        ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                        ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_FULLTEXT_INDEX, 'index_type':'full_text'}]),
+                        ('sleep_for',   ['',{'seconds':5}]),
+                        ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+                        # - create a new data object be scheduled for indexing
+                        ('create',      ['-d',{'path':data_1, 'content':'test__62 content'}]),
+                        ('add_AVU',     ['-d',{'path':data_1,    'avu':('t-post-d1-attr','dataobj_meta','zz') }]),
+                        ('call_function',[List_Active_Task_IDs,{'return_values':jobs_before_delete}]),
+                        # - delete data object before AVU or content can be indexed
+                        ('delete',      ['',{'path':data_1}]),
+                        ('call_function',[List_Active_Task_IDs,{'return_values':jobs_after_delete}]),
+                    ]
+                    with self.logical_filesystem_for_indexing( setup, test_session ):
+                        self.assertEqual( len(jobs_before_delete), len(indices))
+                        purge_jobs = list(set(jobs_after_delete) - set(jobs_before_delete))
+                        test_session.assert_icommand(['iqdel'] + purge_jobs)
+                        self.assertEqual( len(List_Active_Task_IDs()), len(indices))
+                        # - wait for indexing job(s) to complete
+                        self.assertIsNotNone( repeat_until (operator.eq, True) (self.delay_queue_is_empty) (test_session) )
+        finally:
+            if test_path:
+                with session.make_session_for_existing_admin() as admin_session:
+                    admin_session.assert_icommand ('irm -fr {}'.format(test_path))
+            if DEFAULT_METADATA_INDEX in indices: delete_metadata_index()
+            if DEFAULT_FULLTEXT_INDEX in indices: delete_fulltext_index()
+
     def test_response_to_elasticsearch_404_metadata__issue_34(self):
         with indexing_plugin__installed():
             sleep(5)
@@ -462,6 +526,7 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     admin_session.assert_icommand('irm -fr {collection}'.format(**locals()))
                     admin_session.assert_icommand("iadmin rum") # remove unused metadata
                     delete_metadata_index()
+
 
     def test_applying_indicators_ex_post_facto (self):
         with session.make_session_for_existing_admin() as admin_session:
@@ -640,12 +705,12 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
         collections_to_delete = []
         try:
             for instruc,data in objects:
-                type_,details_ = data
+                argument_,details_ = data
                 if instruc == 'create':
-                    if type_ == '-C':
+                    if argument_ == '-C':
                         session.assert_icommand('imkdir -p {0}'.format(details_['path']))
                         if details_.get('delete_tree_when_done'): collections_to_delete += [details_['path']]
-                    elif type_ == '-d':
+                    elif argument_ == '-d':
                         with tempfile.NamedTemporaryFile() as t:
                             t.write(details_.get('content',''))
                             t.flush();
@@ -653,15 +718,17 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                 elif instruc == 'delete':
                     session.assert_icommand(['irm', '-rf', details_['path']],'STDOUT','')
                 elif instruc in ('add_AVU','set_AVU','rm_AVU'):
-                    session.assert_icommand(['imeta',instruc.split('_')[0], type_, details_['path']] + list(details_['avu']))
+                    session.assert_icommand(['imeta',instruc.split('_')[0], argument_, details_['path']] + list(details_['avu']))
                 elif instruc in ('set_AVU_ind','add_AVU_ind','rm_AVU_ind'):
                     cmd =  ['imeta',instruc.split('_')[0], '-C',
                            details_['path'] ] + build_indicator_AVU(details_['index_name'],details_['index_type'])
                     session.assert_icommand(cmd,'STDOUT','')
                 elif instruc == 'wait_for':
-                    self.assertIsNotNone(repeat_until (operator.eq, True, num_iter=details_['num_iter'], interval=details_['interval'], threshold=details_['threshold']) (type_) (session))
+                    self.assertIsNotNone(repeat_until (operator.eq, True, num_iter=details_['num_iter'], interval=details_['interval'], threshold=details_['threshold']) (argument_) (session))
                 elif instruc == 'sleep_for':
                     sleep(details_['seconds']);
+                elif instruc == 'call_function':
+                    details_.get('return_values',[])[:] = argument_()
             yield
             #    --> control goes to "with" clause after setting up conditions from the 'objects' parameter
         finally:
