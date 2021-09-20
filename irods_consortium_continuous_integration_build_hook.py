@@ -21,7 +21,7 @@ def install_building_dependencies(externals_directory):
                       "irods-externals-clang6.0-0",
                       "irods-externals-cppzmq4.2.3-0",
                       "irods-externals-cpr1.3.0-1",
-                      "irods-externals-elasticlient0.1.0-1",
+                      "irods-externals-elasticlient0.1.0-2",
                       "irods-externals-jansson2.7-0",
                       "irods-externals-json3.7.3-0",
                       "irods-externals-libarchive3.3.2-1",
