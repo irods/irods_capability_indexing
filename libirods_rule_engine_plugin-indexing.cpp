@@ -15,7 +15,6 @@
 
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
-#include <boost/core/demangle.hpp>
 
 #undef LIST
 
@@ -47,12 +46,7 @@
 
 using namespace std::string_literals;
 
-std::map<std::string,std::string> GlobalIds;
-
 extern l1desc_t L1desc[NUM_L1_DESC];
-
-static bool new_schema = true;
-
 
 
 int _delayExec(
@@ -78,38 +72,50 @@ namespace {
 
     const char* rm_force_kw = "*"; // default value tested for in "*_post" PEPs
 
-    auto get_indices_for_delete_by_query (rsComm_t& comm, const std::string &_object_name, bool recurs) -> std::set<std::string>
+    //-- Collect the AVU indexing indicators from collections in an object's parent
+    //-  chain or attached to subcollections (any level deep) of the given object.
+    //-  This is a convenient and not too far-reaching superset of the actual set
+    //-  of indicators that apply for the deletion of this and all sub objects. Note
+    //-  the object is going away, so there is no harm in deleting mentions of it
+    //-  and any subobjects from all indices so computed, even if some of them don't
+    //-  refer to the object(s).
+
+    auto get_indices_for_delete_by_query (rsComm_t& comm, const std::string &_object_name, const bool recurs) -> std::set<std::string>
     {
         using irods::indexing::parse_indexer_string;
-        std::set<std::string> indices;
+
         namespace fs   = irods::experimental::filesystem;
         namespace fsvr = irods::experimental::filesystem::server;
         using     fsp  = fs::path;
+
         fsp node {_object_name}, up_node {_object_name};
-        auto coll_name {_object_name};
-        auto myQuery = [&]{
+
+        std::set<std::string> indices;
+
+        auto get_indices_from_collection_AVUs = [&](const std::string& collection){
             irods::query q { &comm, fmt::format("select META_COLL_ATTR_VALUE where "
                                                 "META_COLL_ATTR_NAME = '{}' and COLL_NAME = '{}'",
-                                                config->index,coll_name) };
+                                                config->index,collection) };
             for (const auto &row : q) {
                 std::string index_name = std::get<0>(parse_indexer_string(row[0]));
                 indices.insert( index_name );
             }
         };
+
         while (!up_node.empty()) {
-            coll_name = up_node.string();
-            if (fsvr::is_collection(comm,up_node)) { myQuery(); }
+            if (fsvr::is_collection(comm,up_node)) { get_indices_from_collection_AVUs(up_node.string()); }
             up_node = up_node.parent_path();
             if (0 == up_node.compare(node.root_collection())) { break; }
         }
+
         if (recurs) {
             auto iter_end = fsvr::recursive_collection_iterator{};
             auto iter =  fsvr::recursive_collection_iterator{comm, _object_name};
             for (; iter != iter_end ; ++iter) {
-                coll_name = iter->path().string();
-                if (fsvr::is_collection(comm,*iter)) { myQuery(); }
+                if (fsvr::is_collection(comm,*iter)) { get_indices_from_collection_AVUs(iter->path().string()); }
             }
         }
+
         return indices;
     }
 
@@ -594,9 +600,9 @@ namespace {
         return dst;
     }
 
-    auto get_default_Mime_Type (const std::string & input) -> std::string
+    auto get_default_mime_type (const std::string & input) -> std::string
     {
-        static std::map <std::string, std::string> default_mimeTypes
+        const static std::map <std::string, std::string> default_mime_types
         {
             {".aac", "audio/aac"},
             {".abw", "application/x-abiword"},
@@ -677,7 +683,13 @@ namespace {
         };
         std::string retvalue {};
         if (auto offs = input.rfind("."); offs != std::string::npos) {
-            retvalue = default_mimeTypes[ to_lowercase(input.substr(offs)) ];
+            const std::string lower_case_ext = to_lowercase(input.substr(offs));
+            try{
+                retvalue = default_mime_types.at(lower_case_ext);
+	    }
+	    catch(const std::out_of_range & e) {
+                irods::log(LOG_DEBUG, fmt::format("Unknown extension '{}' in {}.",lower_case_ext,__FUNCTION__));
+            }
         }
         return retvalue.size() ? retvalue : "application/octet-stream";
     }
@@ -726,7 +738,7 @@ namespace {
         }
         auto fileName = obj ["fileName"] = irods_path.object_name();
         obj ["url"] = fmt::format(config->urlTemplate, _obj_path);
-        obj["mimeType"] = get_default_Mime_Type (fileName);  // dwm - Q for Mike : what is mimetype for collections ?
+        obj["mimeType"] = get_default_mime_type (fileName);  // dwm - is there a mimetype for collections ?
         return obj;
 
     } // get_system_metadata
@@ -755,7 +767,7 @@ namespace {
             args.push_back(boost::any(_units)); // was units   //      As this is now a no-op, we should remove these arguments.
             args.push_back(boost::any(_index_name));
 
-            args.push_back(boost::any( std::string {  get_system_metadata(_rei, _object_path ).dump()  } ));
+            args.push_back(boost::any(get_system_metadata(_rei, _object_path).dump()));
 
             irods::indexing::invoke_policy(_rei, policy_name, args);
 
@@ -770,7 +782,6 @@ irods::error start(
     const std::string& _instance_name ) {
     RuleExistsHelper::Instance()->registerRuleRegex("pep_api_.*");
     config = std::make_unique<irods::indexing::configuration>(_instance_name);
-    GlobalIds["per_object"] = _instance_name; // limit delay jobs per-logical-path to prevent O(N^2) of N rapid-fire AVU's placed on the object
     return SUCCESS();
 } // start
 

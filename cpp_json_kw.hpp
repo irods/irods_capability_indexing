@@ -1,5 +1,5 @@
-#ifndef cpp_json_kw__hpp
-#define cpp_json_kw__hpp
+#ifndef CPP_JSON_KW__HPP
+#define CPP_JSON_KW__HPP
 
 #include <optional>
 #include <string>
@@ -49,4 +49,4 @@ int main (int argc, char** argv)
  *
  */
 
-#endif // cpp_json_kw__hpp
+#endif // CPP_JSON_KW__HPP

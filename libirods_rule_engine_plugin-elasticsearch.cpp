@@ -46,7 +46,7 @@ namespace {
 
     using HTTPMethod = elasticlient::Client::HTTPMethod;
 
-    namespace ES {
+    namespace ElasticSearch {
 
         cpr::Response index (const std::string & version,
                              elasticlient::Client &cl,
@@ -77,157 +77,9 @@ namespace {
                                         "");
         }
 
-    } // namespace ES
+    } // namespace ElasticSearch
 
     using string_t = std::string;
-
-    // -- begin code from old nlohmann::json
-    // -- ( https://github.com/nlohmann/json/blob/ec7a1d834773f9fee90d8ae908a0c9933c5646fc/src/json.hpp#L4604-L4697 )
-
-    static std::size_t extra_space(const string_t& s) noexcept;
-
-    static string_t escape_string(const string_t& s) noexcept
-    {
-        const auto space = extra_space(s);
-        if (space == 0)
-        {
-            return s;
-        }
-
-        // create a result string of necessary size
-        string_t result(s.size() + space, '\\');
-        std::size_t pos = 0;
-
-        for (const auto& c : s)
-        {
-            switch (c)
-            {
-                // quotation mark (0x22)
-                case '"':
-                {
-                    result[pos + 1] = '"';
-                    pos += 2;
-                    break;
-                }
-
-                // reverse solidus (0x5c)
-                case '\\':
-                {
-                    // nothing to change
-                    pos += 2;
-                    break;
-                }
-
-                // backspace (0x08)
-                case '\b':
-                {
-                    result[pos + 1] = 'b';
-                    pos += 2;
-                    break;
-                }
-
-                // formfeed (0x0c)
-                case '\f':
-                {
-                    result[pos + 1] = 'f';
-                    pos += 2;
-                    break;
-                }
-
-                // newline (0x0a)
-                case '\n':
-                {
-                    result[pos + 1] = 'n';
-                    pos += 2;
-                    break;
-                }
-
-                // carriage return (0x0d)
-                case '\r':
-                {
-                    result[pos + 1] = 'r';
-                    pos += 2;
-                    break;
-                }
-
-                // horizontal tab (0x09)
-                case '\t':
-                {
-                    result[pos + 1] = 't';
-                    pos += 2;
-                    break;
-                }
-
-                default:
-                {
-                    if (c >= 0x00 and c <= 0x1f)
-                    {
-                        // print character c as \uxxxx
-                        sprintf(&result[pos + 1], "u%04x", int(c));
-                        pos += 6;
-                        // overwrite trailing null character
-                        result[pos] = '\\';
-                    }
-                    else
-                    {
-                        // all other characters are added as-is
-                        result[pos++] = c;
-                    }
-                    break;
-                }
-            }
-        }
-
-        return result;
-    }
-    static std::size_t extra_space(const string_t& s) noexcept
-    {
-        std::size_t result = 0;
-
-        for (const auto& c : s)
-        {
-            switch (c)
-            {
-                case '"':
-                case '\\':
-                case '\b':
-                case '\f':
-                case '\n':
-                case '\r':
-                case '\t':
-                {
-                    // from c (1 byte) to \x (2 bytes)
-                    result += 1;
-                    break;
-                }
-
-                default:
-                {
-                    if (c >= 0x00 and c <= 0x1f)
-                    {
-                        // from c (1 byte) to \uxxxx (6 bytes)
-                        result += 5;
-                    }
-                    break;
-                }
-            }
-        }
-
-        return result;
-    }
-
-    // --  end code from old nlohmann::json
-
-    template<class T>
-    auto vector_as_string (const std::vector<T> & v) {
-      std::ostringstream s;
-      bool sep = false;
-      for (const auto & element: v) {
-          s << (sep?",":"") + fmt::format("{}", element);
-          sep = true;
-      }
-      return s.str();
-    }
 
     struct configuration : irods::indexing::configuration {
         std::vector<std::string> hosts_;
@@ -327,12 +179,12 @@ namespace {
         namespace fsvr = irods::experimental::filesystem::server;
         std::string query_str;
         if (fsvr::is_collection( *_rei->rsComm, fs::path{_object_path} )) {
-            if (iscoll) *iscoll = true;
+            if (iscoll) { *iscoll = true; }
             query_str = boost::str( boost::format("SELECT COLL_ID WHERE COLL_NAME = '%s'")
                                         % _object_path );
         }
         else {
-            if (iscoll) *iscoll = false;
+            if (iscoll) { *iscoll = false; }
             query_str = boost::str( boost::format("SELECT DATA_ID WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'")
                                         % data_name
                                         % coll_name );
@@ -367,9 +219,9 @@ namespace {
         auto & avus_out = *_out;
         const std::string query_str = _is_coll ?
             fmt::format("SELECT META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS"
-                          "WHERE COLL_ID = '{}' ",_obj_id) :
+                        " WHERE COLL_ID = '{}' ", _obj_id) :
             fmt::format("SELECT META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS"
-                          " WHERE DATA_ID = '{}' " , _obj_id);
+                        " WHERE DATA_ID = '{}' ", _obj_id);
             irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
             for (const auto & row : qobj) {
                 if (row[0] == config->index) continue;
@@ -377,7 +229,7 @@ namespace {
                                  { "value",     row[1] },
                                  { "unit",      row[2] }  };
             }
-    } // update_metadata_for_index
+    } // get_metadata_for_object_index_id
 
     void update_object_metadata(
         ruleExecInfo_t*    _rei,
@@ -624,9 +476,14 @@ namespace {
 
             std::optional<nlohmann::json> jsonarray;
             get_metadata_for_object_index_id( _rei, object_id, is_coll, jsonarray );
-            obj_meta ["metadataEntries"] = *jsonarray; // dwm - check
+            if (!jsonarray) {
+                    irods::log( LOG_WARNING, fmt::format("Abort indexing metadata, null AVU array returned for object {} in {}:{}",
+                                               _object_path, __FILE__, __FUNCTION__));
+                    return;
+            }
+            obj_meta ["metadataEntries"] = *jsonarray;
 
-            const cpr::Response response = ES::index(config->es_version_, client, _index_name, "text", object_id, obj_meta.dump());
+            const cpr::Response response = ElasticSearch::index(config->es_version_, client, _index_name, "text", object_id, obj_meta.dump());
 
             if(response.status_code != 200 && response.status_code != 201) {
                 THROW(
@@ -689,7 +546,7 @@ namespace {
               fsvr::path{_object_path}.is_absolute() ? get_object_index_id( _rei, _object_path)
                                                      :  _object_path
             };
-            const cpr::Response response = ES::remove(config->es_version_, client, _index_name, "text", object_id);
+            const cpr::Response response = ElasticSearch::remove(config->es_version_, client, _index_name, "text", object_id);
             switch(response.status_code) {
                 // either the index has been deleted, or the AVU was cleared unexpectedly
                 case 404:
@@ -818,7 +675,7 @@ irods::error exec_rule(
             const std::string source_resource{ boost::any_cast<std::string>(*it) }; ++it;
             const std::string index_name{ boost::any_cast<std::string>(*it) }; ++it;
 
-            invoke_indexing_event_full_text(
+            invoke_purge_event_full_text(
                 rei,
                 object_path,
                 source_resource,
@@ -866,35 +723,47 @@ irods::error exec_rule(
         else if(_rn == "irods_policy_recursive_rm_object_by_path") {
             using nlohmann::json;
             auto it = _args.begin();
-            const  std::string coll_path{ boost::any_cast<std::string>(*it) };
+            const std::string the_path{ boost::any_cast<std::string>(*it) };
             std::advance( it, 2 );
-            const json recurse_info = json::parse(boost::any_cast<std::string>(*it));
-            auto escaped_path = ([] (std::string path_) -> std::string {
-                                   boost::replace_all ( path_,  "\\" , "\\\\");
-                                   boost::replace_all ( path_,  "?" , "\\?");
-                                   boost::replace_all ( path_,  "*" , "\\*"); return path_; }) (coll_path);
-            std::string JtopLevel  = json::parse(
-                                          boost::str(boost::format( R"JSON({"query":{"match":{"absolutePath":"%s"}}})JSON") % escaped_path.c_str())
-                                     ).dump();
-            std::string JsubObject = recurse_info["is_collection"] ? json::parse(
-                                                                     boost::str(boost::format( R"JSON({"query":{"wildcard":{"absolutePath":{"value":"%s/*"}}}})JSON")
-                                                                                % escaped_path.c_str())).dump()
-                                                                   : "";
+            const json recurse_info = json::parse(boost::any_cast<std::string&>(*it));
+            auto escape = [] (std::string path_) -> std::string { boost::replace_all ( path_,  "\\" , "\\\\");
+                                                                  boost::replace_all ( path_,  "?" , "\\?");
+                                                                  boost::replace_all ( path_,  "*" , "\\*");
+                                                                  return path_;};
+            auto escaped_path = escape(the_path);
+            std::string JtopLevel = json{{"query",{{"match",{{"absolutePath",escaped_path}} }} }}.dump();
+            std::string JsubObject{""};
+            try {
+                if (recurse_info["is_collection"].get<bool>()) {
+                    JsubObject = json{{"query",{{"wildcard",{{"absolutePath",{{"value",escaped_path+"/*"}} }} }} }}.dump();
+                }
+            }
+            catch(const std::domain_error & e) {
+                return ERROR(-1,fmt::format("_delete_by_query - stopped short of performRequest - domain_error: {}",e.what()));
+            }
             elasticlient::Client client { config->hosts_ };
+
             try {
                 rsComm_t& comm = *rei->rsComm;
                 for (const std::string & e : recurse_info["indices"]) {
                     const std::string del_by_query_URL { e + "/_delete_by_query" } ;
                     for (const std::string &json_out: {JtopLevel,JsubObject}) {
                         if (json_out == "") { continue; }
-                        auto r = client.performRequest( HTTPMethod::POST, del_by_query_URL, json_out);
-
-                        // dwm - need to check response !!
+                        auto response = client.performRequest( HTTPMethod::POST, del_by_query_URL, json_out);
+                        if(response.status_code != 200) {
+                            irods::log( LOG_WARNING, fmt::format("_delete_by_query - response code not 200"
+                                                                 "\n\t- for path [{}]"
+                                                                 "\n\t- escaped as [{}]"
+                                                                 "\n\t- json request body is [{}]",the_path,escaped_path,json_out));
+                        }
                     }
                 }
-            } catch (nlohmann::json::parse_error & e) {
-                auto hosts_list = vector_as_string( config->hosts_ );
-                rodsLog(LOG_NOTICE, "Cannot reach elasticsearch on : <%s>", hosts_list.c_str());
+            }
+            catch (const elasticlient::ConnectionException & e) {
+                irods::log(LOG_ERROR, fmt::format("Cannot reach elasticsearch on : [{}]",fmt::join(config->hosts_, ", ")));
+            }
+            catch (const nlohmann::json::parse_error & e) {
+                irods::log(LOG_ERROR, fmt::format("JSON parse exception : [{}]", e.what()));
             }
         } // "irods_policy_recursive_rm_object_by_path"
         else {

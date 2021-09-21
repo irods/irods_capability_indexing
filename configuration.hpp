@@ -6,7 +6,6 @@
 
 namespace irods {
     namespace indexing {
-        // dwm const std::string indexer_separator{"::"};
 
         namespace policy {
             // Policy Naming Examples
