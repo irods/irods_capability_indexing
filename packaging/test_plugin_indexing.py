@@ -212,6 +212,7 @@ def indexing_plugin__installed(indexing_config=()):
 
 class Create_Virtualenv_Exception (Exception):
     def __init__(self,script_return_code,*a,**kw):
+        """Initialize exception by storing return_code from the relevant failed shell command."""
         super(Create_Virtualenv_Exception,self).__init__(*a,**kw)
         self.script_return_code = script_return_code
 
@@ -220,7 +221,7 @@ def install_python3_virtualenv_with_python_irodsclient(PATH='~/py3',preTestPRCIn
     rc = 0
     if preTestPRCInstall:
         rc = -1
-        out,_,rc = lib.execute_command_permissive( dedent("""\
+        dummy_out,_,rc = lib.execute_command_permissive( dedent("""\
                 . '{PATH}'/bin/activate ; cd ${{HOME}} ;  python -c 'import irods.manager; import remote_pdb'
                 """.format(**locals())),use_unsafe_shell=True)
     if 0 != rc:
@@ -372,9 +373,6 @@ debugFileName = None # -- or for example: "/tmp/debug.txt"  # -- for logging deb
 
 
 class TestIndexingPlugin(ResourceBase, unittest.TestCase):
-
-    def test_01(self):
-        pass
 
     @classmethod
     def setUpClass(cls):
@@ -871,6 +869,51 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     repeat_until (operator.eq, True, interval=0.1, num_iter=12) (self.delay_queue_is_empty) (admin_session, try_kill = 10.0)
                     delete_metadata_index ('metadata_index')
                     delete_fulltext_index ('full_text_index')
+
+    def test_purge_when_AVU_indicator_removed(self):
+        test_path_1 = ""
+        try:
+            create_metadata_index()
+            create_fulltext_index()
+            with indexing_plugin__installed():
+                with session.make_session_for_existing_admin() as admin_session:
+                    test_session = admin_session
+                    path_to_home = '/{0.zone_name}/home/{0.username}'.format(test_session)
+                    test_path_1 = path_to_home + "/test_purges_1"
+                    data_1 = test_path_1 + "/data1-post"
+                    QUOTE = ('The rocket stood in the cold winter morning, making summer with every breath of its mighty exhausts.'
+                             '  - Ray Bradbury, "The Martian Chronicles".')
+                    initial_setup = [
+                        # - create the items to be indexed
+                        ('create',      ['-C',{'path':test_path_1, 'delete_tree_when_done': False }]),
+                        ('add_AVU_ind', ['-C',{'path':test_path_1, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                        ('add_AVU_ind', ['-C',{'path':test_path_1, 'index_name': DEFAULT_FULLTEXT_INDEX, 'index_type':'full_text'}]),
+                        ('create',      ['-d',{'path':data_1, 'content': QUOTE }]),
+                        # - cause a new data object AVU to be indexed
+                        ('add_AVU',     ['-d',{'path':data_1, 'avu':('purge_test','dataobj_meta','zz') }]),
+                        ('sleep_for',   ['',{'seconds':5}]),
+                        # - let indexing jobs complete
+                        ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+                    ]
+                    with self.logical_filesystem_for_indexing( initial_setup, test_session ):
+                        # - for baseline, make sure content and metadata has been indexed
+                        self.assertEqual(1, number_of_hits(search_index_for_All_object_paths (DEFAULT_FULLTEXT_INDEX)))
+                        self.assertEqual(1, number_of_hits(search_index_for_avu_attribute_name (DEFAULT_METADATA_INDEX,'purge_test')))
+                        Test_setup = [
+                                ('rm_AVU_ind', ['-C',{'path':test_path_1, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                                ('rm_AVU_ind', ['-C',{'path':test_path_1, 'index_name': DEFAULT_FULLTEXT_INDEX, 'index_type':'full_text'}]),
+                                ('wait_for',   [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+                        ]
+                        with self.logical_filesystem_for_indexing( Test_setup, test_session ): # dwm
+                            # - test that the appropriate purges have occurred
+                            self.assertEqual(0, number_of_hits(search_index_for_All_object_paths (DEFAULT_FULLTEXT_INDEX)))
+                            self.assertEqual(0, number_of_hits(search_index_for_avu_attribute_name (DEFAULT_METADATA_INDEX,'purge_test')))
+        finally:
+            with session.make_session_for_existing_admin() as admin_session:
+                if test_path_1:
+                    admin_session.assert_icommand ('irm -fr {}'.format(test_path_1))
+            delete_metadata_index()
+            delete_fulltext_index()
 
 if __name__ == '__main__':
     unittest.main()

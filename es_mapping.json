@@ -17,7 +17,7 @@
 				"isFile": {
 					"type": "boolean"
 				},
-			"dataSize": {
+				"dataSize": {
 					"type": "long"
 				},
 				"mimeType": {

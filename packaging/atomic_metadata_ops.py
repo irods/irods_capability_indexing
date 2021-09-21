@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
-import os
 import re
 import sys
 import getopt
@@ -27,9 +26,7 @@ if optD.get('-t') is not None:
 else:
     sep = re.compile(r"[\t ]")
 
-from irods.session import iRODSSession
 from irods.test.helpers import make_session
-from irods.models import (DataObject, DataObjectMeta)
 from irods.meta import (AVUOperation, iRODSMeta)
 
 class NullInput(Exception): pass
