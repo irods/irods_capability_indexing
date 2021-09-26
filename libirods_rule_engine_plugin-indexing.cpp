@@ -686,8 +686,8 @@ namespace {
             const std::string lower_case_ext = to_lowercase(input.substr(offs));
             try{
                 retvalue = default_mime_types.at(lower_case_ext);
-	    }
-	    catch(const std::out_of_range & e) {
+            }
+            catch(const std::out_of_range & e) {
                 irods::log(LOG_DEBUG, fmt::format("Unknown extension '{}' in {}.",lower_case_ext,__FUNCTION__));
             }
         }
@@ -710,6 +710,7 @@ namespace {
 
         obj["absolutePath"] = _obj_path;
 
+        bool is_collection = false;
         if (fsvr::is_data_object(s)) {
             query_str = fmt::format("SELECT DATA_ID , DATA_MODIFY_TIME, DATA_ZONE_NAME, COLL_NAME, DATA_SIZE where DATA_NAME = '{0}'"
                                     " and COLL_NAME = '{1}' ", name, parent_name  );
@@ -724,6 +725,7 @@ namespace {
             }
         }
         else if (fsvr::is_collection(s)) {
+            is_collection = true;
             query_str = fmt::format("SELECT COLL_ID , COLL_MODIFY_TIME, COLL_ZONE_NAME, COLL_PARENT_NAME where COLL_NAME = '{0}'"
                                     " and COLL_PARENT_NAME = '{1}' ", _obj_path, parent_name  );
             irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
@@ -738,7 +740,7 @@ namespace {
         }
         auto fileName = obj ["fileName"] = irods_path.object_name();
         obj ["url"] = fmt::format(config->urlTemplate, _obj_path);
-        obj["mimeType"] = get_default_mime_type (fileName);  // dwm - is there a mimetype for collections ?
+        obj["mimeType"] = (is_collection ? "" : get_default_mime_type (fileName));
         return obj;
 
     } // get_system_metadata
