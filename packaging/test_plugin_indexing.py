@@ -419,6 +419,55 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
             self.assertTrue( condition )
         return condition
 
+    def test_throttle_limit_45(self):
+        def indexing_flag_exists(ses,coll):
+            rc,out,_ = ses.assert_icommand(["iquest", "--no-page", "%s", "select COLL_NAME where META_COLL_ATTR_NAME = 'irods::indexing::flag' "
+                                 " and COLL_NAME = '{coll}'".format(**locals())], 'STDOUT')
+            return rc == 0 and out.strip() == coll
+        def num_rules_in_queue(ses,coll):
+            rc,out,_ = ses.assert_icommand(["iquest", "--no-page", "%s", """select count(RULE_EXEC_ID) where RULE_EXEC_NAME like '%"{coll}/%' """.format(**locals())], 'STDOUT')
+            return -1 if rc != 0 else int(out.strip())
+        logical_test_path = ''
+        test_dir_path = 'test_45'
+        try:
+            create_metadata_index(DEFAULT_METADATA_INDEX)
+            with session.make_session_for_existing_admin() as ses:
+                NUM_DATA_OBJECTS = 30
+                THROTTLE_LIMIT = (NUM_DATA_OBJECTS//2+1)
+                # - Create collection of data objects (with attached AVUs) to be indexed.
+                files = lib.make_large_local_tmp_dir(test_dir_path, NUM_DATA_OBJECTS, 10)
+
+                HOME = '/{0.zone_name}/home/{0.username}'.format(ses,**locals())
+                if indexing_flag_exists(ses, HOME):
+                    ses.assert_icommand("""imeta rmw -C {HOME} irods::indexing::flag % %""".format(**locals())) # clear flag
+
+                logical_test_path = '/{0.zone_name}/home/{0.username}/{test_dir_path}'.format(ses,**locals())
+                ses.assert_icommand(['iput', '-r', test_dir_path, logical_test_path], 'STDOUT')
+
+                for file_ in files:
+                    ses.assert_icommand("imeta set -d {logical_test_path}/{0} attr_45 value_45 units_45".format(file_,**locals()), "STDOUT")
+                with indexing_plugin__installed( indexing_config = {'minimum_delay_time':'15', 'maximum_delay_time':'25', 'collection_test_flag':HOME,
+                                                                    "job_limit_per_collection_indexing_operation":str(THROTTLE_LIMIT)} ):
+                    ses.assert_icommand("""imeta set -C {coll} """
+                                        """irods::indexing::index {ftidx}::metadata elasticsearch""".format( coll = logical_test_path,
+                                                                                                             ftidx = DEFAULT_METADATA_INDEX))
+                    self.assertIsNotNone (repeat_until (operator.eq, True) (indexing_flag_exists) (ses,HOME))  # --> wait for flag set (collection operation has started)
+                    sleep(9)
+
+                    self.assertLessEqual (num_rules_in_queue(ses,logical_test_path), THROTTLE_LIMIT)
+
+                    self.assertIsNotNone (repeat_until (operator.eq, False) (indexing_flag_exists) (ses,HOME))  # --> wait for flag deletion (collection operation is done)
+                    self.assertIsNotNone (repeat_until (operator.eq, 0) (num_rules_in_queue) (ses,logical_test_path))
+                    sleep(4)
+                    self.assertEqual( NUM_DATA_OBJECTS, number_of_hits(search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX,'attr_45')) )
+        finally:
+            with session.make_session_for_existing_admin() as ses:
+                if logical_test_path:
+                    ses.assert_icommand("irm -rf {}".format(logical_test_path))
+                shutil.rmtree(test_dir_path, ignore_errors=True)
+                delete_metadata_index(DEFAULT_METADATA_INDEX)
+
+
     def test_response_to_elasticsearch_404_fulltext__issue_34(self):
         with indexing_plugin__installed():
             sleep(5)

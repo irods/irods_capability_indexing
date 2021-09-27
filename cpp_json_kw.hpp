@@ -11,6 +11,11 @@ using nlohmann::json;
 template <typename T>
 struct mapped_json_value {bool success ; std::optional<T> value;};
 
+// Extract a value by T (the type) and key (a string lookup key from a JSON object)
+// The returned values are, in order:
+//   -  a boolean (success flag) 
+//   -  a std::optional containing the retrieved value on success.
+
 template <typename T>
 auto kws_get(const nlohmann::json &j, const std::string & key) -> mapped_json_value<T>
 {
