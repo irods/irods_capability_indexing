@@ -3,7 +3,13 @@
 #include "irods_re_plugin.hpp"
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
+
+#define IRODS_METADATA_ENABLE_SERVER_SIDE_API
 #define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+
+#include "metadata.hpp"
+#include "irods_at_scope_exit.hpp"
+
 #include "irods_query.hpp"
 #include "irods_virtual_path.hpp"
 
@@ -23,10 +29,16 @@
 #include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
 #include <random>
+#include <functional>
+#include <limits>
+#include <unistd.h>
 
+#include <fmt/format.h>
 #include "json.hpp"
 #include "cpp_json_kw.hpp"
 
+
+using namespace std::string_literals;
 
 int _delayExec(
     const char *inActionCall,
@@ -252,8 +264,57 @@ namespace irods {
                                          _index_type);
             fsp start_path{_collection_name};
 
+            unsigned int job_limit = 0;
+            unsigned int job_max = std::numeric_limits<decltype(job_limit)>::max();
+
+            if (config_.job_limit.size()) {
+                    try{ job_limit = boost::lexical_cast<unsigned long>(config_.job_limit); }
+                    catch( const boost::bad_lexical_cast & e) {
+                        irods::log(LOG_WARNING,
+                            fmt::format( R"Qu(.String parameter "job_limit_per_collection_indexing_operation")Qu"
+                            R"Qu([should translate to unsigned integer (got "{}" instead)])Qu", config_.job_limit));
+                    }
+                    if (job_limit > job_max) {
+                        job_limit = job_max;
+                        irods::log(LOG_WARNING,
+                            fmt::format( R"Qu(.String parameter "job_limit_per_collection_indexing_operation")Qu"
+                            "too large, clipped to: {}", job_max));
+                    }
+            }
+
             auto iter_end = fsvr::recursive_collection_iterator{};
             auto iter =  fsvr::recursive_collection_iterator{comm, start_path};
+
+            const std::hash<std::string> string_hasher;
+            const auto key1 = string_hasher( _collection_name );
+            const auto key2 = string_hasher( config_.instance_name_ );
+
+            const std::string unique_key = std::to_string( key1 ) + "-" + std::to_string( key2 );
+
+            static const auto double_quote = R"(")"s;
+            const auto JOB_QUERY_STRING = fmt::format (R"(SELECT count(RULE_EXEC_ID) WHERE RULE_EXEC_NAME like '%"{}"%')", unique_key);
+            const auto LOW_WATER_MARK {job_limit / 2};
+            auto n_jobs {job_limit * 0U};
+
+            namespace ix = irods::experimental;
+            namespace ixm = ix::metadata;
+            using entity_type = ix::entity::entity_type;
+
+            ixm::avu md_flag {config_.flag, __func__};
+
+            auto set_flag = (config_.collection_test_flag != "");
+            if (set_flag) ixm::set(comm, md_flag, entity_type::collection, config_.collection_test_flag);
+            irods::at_scope_exit at_exit_ {[&]{ if (set_flag) ixm::remove(comm, md_flag, entity_type::collection, config_.collection_test_flag); }};
+
+            struct query_failed : public std::runtime_error {
+                query_failed( const std::string& e = "Query failed to fetch # of jobs active" )
+			: std::runtime_error{e} {}
+            };
+            struct job_limit_precision : public std::runtime_error {
+                job_limit_precision( const std::string& e = "Job Limits may not exceed 32-bit unsigned integer precision" )
+			: std::runtime_error{e} {}
+            };
+
 
             for (auto path = start_path; ; ++iter) {
                 const auto s = fsvr::status(comm,path);
@@ -267,6 +328,30 @@ namespace irods {
                                                    path.string(),
                                                    indexing_resources);
                         }
+
+                        if (job_limit > 0 && n_jobs >= job_limit) {
+                            // The job limit parameter should be a large number, in the thousands or more perhaps, but small
+                            // enough so that indexing your largest collections doesn't fill up all of virtual memory.
+                            for(;;) {
+                                query<rsComm_t> qobj{comm_, JOB_QUERY_STRING, 1};
+                                for (const auto & row: qobj) {
+                                    auto count = std::stol( row[0] );
+                                    if (count > job_max) { throw job_limit_precision{}; }
+                                    n_jobs = count;
+                                    break;
+                                }
+                                // The approach to throttling is simply to wait until the number of delayed tasks falls
+                                // down to the LOW_WATER_MARK and then exit the wait loop to fill up the task queue again.
+                                // Because we're already in a delayed task, this does not impact the plugin's response time.
+                                if (n_jobs > LOW_WATER_MARK) {
+                                    sleep(1);
+                                }
+                                else {
+                                    break;
+                                }
+                            }
+                        }
+
                         if ( ! (is_collection && _index_type == "full_text" )) {
                             schedule_policy_event_for_object(
                                 policy_name,
@@ -276,14 +361,22 @@ namespace irods {
                                 _indexer,
                                 _index_name,
                                 _index_type,
-                                generate_delay_execution_parameters());
+                                generate_delay_execution_parameters(),
+                                {},{},{},
+                                {{ "job_category_tag", unique_key }} );
+
+                            ++n_jobs;
                         }
                     }
                     catch(const exception& _e) {
                         rodsLog(
                             LOG_ERROR,
-                            "failed to find indexing resource for object [%s]",
+                            "failed to find indexing resource (error code=[%ld]) for object [%s]",static_cast<long>(_e.code()),
                             path.string().c_str());
+                    }
+                    catch (const std::runtime_error & e) {
+                        irods::log(LOG_ERROR,fmt::format("Abort indexing collection: {}",e.what()));
+                        break;
                     }
                     if (iter != iter_end) { path = iter->path(); }
                                      else { break; }
@@ -556,6 +649,7 @@ namespace irods {
             using json = nlohmann::json;
 
             const auto & [_ID_bool, _obj_optional_ID] = kws_get<std::string>(_extra_options, "_obj_optional_ID");
+            const auto & [_tag_bool,  job_category_tag] =  kws_get<std::string>(_extra_options, "job_category_tag");
 
             json rule_obj;
             rule_obj["rule-engine-operation"]     = _event;
@@ -569,6 +663,9 @@ namespace irods {
             rule_obj["attribute"]                 = _attribute;
             rule_obj["value"]                     = _value;
             rule_obj["units"]                     = _units;
+            if (_tag_bool && job_category_tag) {
+                rule_obj["job-category-tag"] = *job_category_tag;
+            }
 
             const auto delay_err = _delayExec(
                                        rule_obj.dump().c_str(),

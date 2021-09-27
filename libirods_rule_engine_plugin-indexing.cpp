@@ -9,6 +9,7 @@
 #include "irods_resource_backport.hpp"
 #include "rsModAVUMetadata.hpp"
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+
 #include "filesystem.hpp"
 
 #include <irods_log.hpp>
@@ -335,6 +336,8 @@ namespace {
                 const std::string attribute{ avu_inp->arg3 };
                 const std::string value{ avu_inp->arg4 };
                 const std::string units{ NULL_PTR_GUARD(avu_inp->arg5) };
+
+                if(config->flag == attribute) { return; }
 
                 const std::string add{"add"};
                 const std::string set{"set"};
@@ -688,7 +691,7 @@ namespace {
                 retvalue = default_mime_types.at(lower_case_ext);
             }
             catch(const std::out_of_range & e) {
-                irods::log(LOG_DEBUG, fmt::format("Unknown extension '{}' in {}.",lower_case_ext,__FUNCTION__));
+                irods::log(LOG_DEBUG, fmt::format("In {}, function {}: Unknown extension [{}]",__FILE__,__func__,lower_case_ext));
             }
         }
         return retvalue.size() ? retvalue : "application/octet-stream";
@@ -716,7 +719,7 @@ namespace {
                                     " and COLL_NAME = '{1}' ", name, parent_name  );
             irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
             for (const auto & i:qobj) {
-                obj["lastModifiedDate"] = std::stol( i[1] ) * 1000; // epoch ms
+                obj["lastModifiedDate"] = std::stol( i[1] ); // epoch seconds
                 obj["zoneName"] = i[2];
                 obj["parentPath"] = i[3];
                 obj["dataSize"] = std::stol( i[4] );
