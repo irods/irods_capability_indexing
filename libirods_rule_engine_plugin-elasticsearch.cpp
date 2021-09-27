@@ -477,9 +477,9 @@ namespace {
             std::optional<nlohmann::json> jsonarray;
             get_metadata_for_object_index_id( _rei, object_id, is_coll, jsonarray );
             if (!jsonarray) {
-                    irods::log( LOG_WARNING, fmt::format("Abort indexing metadata, null AVU array returned for object {} in {}:{}",
-                                               _object_path, __FILE__, __FUNCTION__));
-                    return;
+                irods::log( LOG_WARNING, fmt::format("In {}, function {}: Aborted indexing metadata, null AVU array returned for object [{}]",
+                                                     __FILE__, __func__,_object_path));
+                return;
             }
             obj_meta ["metadataEntries"] = *jsonarray;
 

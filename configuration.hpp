@@ -62,14 +62,18 @@ namespace irods {
         struct configuration {
             // metadata attributes
             std::string index{"irods::indexing::index"};
+            std::string flag{"irods::indexing::flag"};
 
             // basic configuration
             std::string minimum_delay_time{"1"};
             std::string maximum_delay_time{"30"};
+            std::string job_limit{""};
             std::string delay_parameters{"<EF>60s DOUBLE UNTIL SUCCESS OR 5 TIMES</EF>"};
-            std::string urlTemplate{"http:/{}"};
-
+            std::string urlTemplate{"http:/{}"};  // Clients should aim not to use this index-embedded URL. It is no longer used by
+                                                  // MetaLnx as of version 2.5.0, nor by the search plugin extension.
+                                                  // Thus, it is a possible target for deprecation.
             int log_level{LOG_DEBUG};
+            std::string collection_test_flag {""};
 
             const std::string instance_name_{};
             explicit configuration(const std::string& _instance_name);
