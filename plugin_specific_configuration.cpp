@@ -2,6 +2,9 @@
 #include "plugin_specific_configuration.hpp"
 #include "irods_server_properties.hpp"
 #include "irods_exception.hpp"
+#include "fmt/format.h"
+#include "rodsLog.h"
+
 
 namespace irods {
     namespace indexing {
@@ -17,15 +20,24 @@ namespace irods {
                     const auto& inst_name = rule_engine.at( CFG_INSTANCE_NAME_KW ).get_ref<const std::string&>();
                     if ( inst_name == _instance_name ) {
                         if(rule_engine.count(CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW) > 0) {
-                            return boost::any_cast<const std::unordered_map<std::string, boost::any>&>(
-                                    rule_engine.at(CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW));
+                            return rule_engine.at(CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW);
                         } // if has PSC
                     } // if inst_name
                 } // for rule_engines
-            } catch ( const boost::bad_any_cast& e ) {
-                THROW( INVALID_ANY_CAST, e.what() );
+
             } catch ( const std::out_of_range& e ) {
                 THROW( KEY_NOT_FOUND, e.what() );
+
+            } catch ( const nlohmann::json::exception& _e ) {
+                rodsLog(LOG_ERROR, "JSON error -- Function %s  Line %d",__func__,__LINE__);
+                THROW( SYS_LIBRARY_ERROR, _e.what() );
+
+            } catch ( const std::exception& e ) {
+                rodsLog(LOG_ERROR, "General exception in %s - %s", __func__, e.what());
+                THROW(SYS_INTERNAL_ERR, e.what());
+
+            } catch ( ... ) {
+                THROW( SYS_UNKNOWN_ERROR, fmt::format( "Function {} File {} Line {}",__func__,__FILE__,__LINE__));
             }
 
             THROW(
