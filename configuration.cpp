@@ -1,6 +1,8 @@
 
 #include "configuration.hpp"
 #include "plugin_specific_configuration.hpp"
+#include "fmt/format.h"
+#include "rodsLog.h"
 
 namespace irods {
     namespace indexing {
@@ -10,8 +12,8 @@ namespace irods {
             try {
                 auto cfg = get_plugin_specific_configuration(_instance_name);
                 auto capture_parameter = [&](const std::string& _param, std::string& _attr) {
-                    if(cfg.find(_param) != cfg.end()) {
-                        _attr = boost::any_cast<std::string>(cfg.at(_param));
+                    if (const auto iter = cfg.find(_param); iter != cfg.end()) {
+                        _attr = iter->get<std::string>();
                     }
                 }; // capture_parameter
 
@@ -22,12 +24,16 @@ namespace irods {
                 capture_parameter("maximum_delay_time", maximum_delay_time);
                 capture_parameter("delay_parameters",   delay_parameters);
                 capture_parameter("collection_test_flag",  collection_test_flag);
-            } catch ( const boost::bad_any_cast& _e ) {
-                THROW( INVALID_ANY_CAST, _e.what() );
-            } catch ( const exception _e ) {
+            } catch ( const exception& _e ) {
                 THROW( KEY_NOT_FOUND, _e.what() );
+            } catch ( const nlohmann::json::exception& _e ) {
+                rodsLog(LOG_ERROR, "JSON error -- Function %s  Line %d",__func__,__LINE__);
+                THROW( SYS_LIBRARY_ERROR, _e.what() );
+            } catch ( const std::exception& _e ) {
+                THROW( SYS_INTERNAL_ERR, _e.what() );
+            } catch ( ... ) {
+                THROW( SYS_UNKNOWN_ERROR, fmt::format( "Function {} File {} Line {}",__func__,__FILE__,__LINE__));
             }
-
 
         } // ctor configuration
 

@@ -91,28 +91,27 @@ namespace {
             try {
                 auto cfg = irods::indexing::get_plugin_specific_configuration(_instance_name);
                 if(cfg.find("hosts") != cfg.end()) {
-                    std::vector<boost::any> host_list = boost::any_cast<std::vector<boost::any>>(cfg.at("hosts"));
+                    nlohmann::json host_list = cfg.at("hosts");
                     for( auto& i : host_list) {
-                        hosts_.push_back(boost::any_cast<std::string>(i));
+                        hosts_.push_back(i.get<std::string>());
                     }
                 }
 
                 if(cfg.find("es_version") != cfg.end()) {
-                    es_version_ = boost::any_cast<std::string>(cfg.at("es_version"));
+                    es_version_ = cfg.at("es_version").get<std::string>();
                 }
 
                 if(cfg.find("bulk_count") != cfg.end()) {
-                    bulk_count_ = boost::any_cast<int>(cfg.at("bulk_count"));
+                    bulk_count_ = cfg.at("bulk_count").get<int>();
                 }
 
                 if(cfg.find("read_size") != cfg.end()) {
-                    bulk_count_ = boost::any_cast<int>(cfg.at("read_size"));
+                    bulk_count_ = cfg.at("read_size").get<int>();
                 }
             }
-            catch(const boost::bad_any_cast& _e) {
+            catch(const std::exception& _e) {
                 THROW(
-                    INVALID_ANY_CAST,
-                    _e.what());
+                    USER_INPUT_OPTION_ERR, _e.what());
             }
         }// ctor
     }; // configuration
@@ -595,6 +594,7 @@ namespace {
 irods::error start(
     irods::default_re_ctx&,
     const std::string& _instance_name ) {
+
     RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
     config = std::make_unique<configuration>(_instance_name);
     object_index_policy = irods::indexing::policy::compose_policy_name(
@@ -609,6 +609,7 @@ irods::error start(
     metadata_purge_policy = irods::indexing::policy::compose_policy_name(
                                irods::indexing::policy::metadata::purge,
                                "elasticsearch");
+
     if (getRodsLogLevel() > LOG_NOTICE) {
        elasticlient::setLogFunction(log_fcn);
     }
