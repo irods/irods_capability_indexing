@@ -25,7 +25,7 @@
 				},
 				"lastModifiedDate": {
 					"type": "date",
-					"format": "epoch_millis"
+					"format": "epoch_second"
 				},
 				"metadataEntries": {
 					"type": "nested",
