@@ -343,7 +343,7 @@ def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEA
                                 },
                                 "lastModifiedDate": {
                                         "type": "date",
-                                        "format": "epoch_millis"
+                                        "format": "epoch_second"
                                 },
                                 "metadataEntries": {
                                         "type": "nested",

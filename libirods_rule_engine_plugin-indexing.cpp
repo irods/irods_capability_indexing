@@ -733,7 +733,7 @@ namespace {
                                     " and COLL_PARENT_NAME = '{1}' ", _obj_path, parent_name  );
             irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
             for (const auto & i : qobj) {
-                obj["lastModifiedDate"] = std::stol( i[1] ) * 1000; // epoch ms
+                obj["lastModifiedDate"] = std::stol( i[1] ); // epoch seconds
                 obj["zoneName"] = i[2];
                 obj["parentPath"] = i[3];
                 obj["dataSize"] = 0L;
