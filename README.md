@@ -53,6 +53,18 @@ There are currently three rule engine plugins to configure for the indexing capa
 ```
 The first is the main indexing rule engine plugin, the second is the plugin responsible for implementing the policy for the indexing technology, and the third is responsible for implementing the document type introspection.  Currently the default imply returns `text` as the document type.  This policy can be overridden to call out to services like Tika for a better introspection of the data.
 
+Within each plugin configuration stanza, the "plugin_specific_configuration" object may contain a number of key-value pairs.  The following pairs are currently applicable for the purpose of setting the indexing capability's operating parameters:
+
+| key                                         |  type  | plugin component |  purpose                                                                        |
+|---------------------------------------------|--------|------------------|---------------------------------------------------------------------------------|
+| minimum_delay_time                          | string |  indexing        | lower limit for randomly generated delay-task intervals                         |
+| maximum_delay_time                          | string |  indexing        | upper limit for randomly generated delay-task intervals                         |
+| es_version                                  | string |  elasticsearch   | set to "6.x" or "7.x" depending on Elasticsearch version (ES 7 default)         |
+| job_limit_per_collection_indexing_operation | string |  indexing        | integer limit to number of concurrent collection operations ("" means no limit) |
+| bulk_count                                  | string |  elasticsearch   | the number of text chunks processed at once for ES full-text indexing           |
+| read_size                                   | int    |  elasticsearch   | the size of individual text chunks processed for ES full-text indexing          |
+
+
 # Policy Implementation
 
 Policy names are are dynamically crafted by the indexing plugin in order to invoke a particular technology.  The four policies an indexing technology must implement are crafted from base strings with the name of the technology as indicated by the collection metadata annotation.
