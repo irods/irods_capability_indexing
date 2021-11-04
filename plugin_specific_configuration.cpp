@@ -4,6 +4,7 @@
 #include "irods_exception.hpp"
 #include "fmt/format.h"
 #include "rodsLog.h"
+#include "irods_log.hpp"
 
 
 namespace irods {
@@ -29,7 +30,8 @@ namespace irods {
                 THROW( KEY_NOT_FOUND, e.what() );
 
             } catch ( const nlohmann::json::exception& _e ) {
-                rodsLog(LOG_ERROR, "JSON error -- Function %s  Line %d",__func__,__LINE__);
+                irods::log(LOG_ERROR, fmt::format("[{}:{}] in [file={}] - json exception occurred [error={}], [instance={}]",
+                            __func__,__LINE__,__FILE__, _e.what(), _instance_name));
                 THROW( SYS_LIBRARY_ERROR, _e.what() );
 
             } catch ( const std::exception& e ) {
