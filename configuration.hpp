@@ -3,6 +3,7 @@
 
 #include <string>
 #include "rodsLog.h"
+#include "irods_log.hpp"
 
 namespace irods {
     namespace indexing {

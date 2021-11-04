@@ -3,6 +3,7 @@
 #include "plugin_specific_configuration.hpp"
 #include "fmt/format.h"
 #include "rodsLog.h"
+#include "irods_log.hpp"
 
 namespace irods {
     namespace indexing {
@@ -25,14 +26,20 @@ namespace irods {
                 capture_parameter("delay_parameters",   delay_parameters);
                 capture_parameter("collection_test_flag",  collection_test_flag);
             } catch ( const exception& _e ) {
-                THROW( KEY_NOT_FOUND, _e.what() );
+                THROW( KEY_NOT_FOUND, fmt::format("[{}:{}] - [{}] [error_code=[{}], instance_name=[{}]",
+                                      __func__, __LINE__, _e.client_display_what(), _e.code(), _instance_name));
             } catch ( const nlohmann::json::exception& _e ) {
-                rodsLog(LOG_ERROR, "JSON error -- Function %s  Line %d",__func__,__LINE__);
+                irods::log( LOG_ERROR,
+                            fmt::format("[{}:{}] in [file={}] - json exception occurred [error={}], [instance_name={}]",
+                                         __func__,__LINE__,__FILE__, _e.what(), _instance_name));
                 THROW( SYS_LIBRARY_ERROR, _e.what() );
             } catch ( const std::exception& _e ) {
-                THROW( SYS_INTERNAL_ERR, _e.what() );
+                THROW( SYS_INTERNAL_ERR,
+                            fmt::format("[{}:{}] in [file={}] - general exception occurred [error={}], [instance_name={}]",
+                                         __func__,__LINE__,__FILE__, _e.what(), _instance_name));
             } catch ( ... ) {
-                THROW( SYS_UNKNOWN_ERROR, fmt::format( "Function {} File {} Line {}",__func__,__FILE__,__LINE__));
+                THROW( SYS_UNKNOWN_ERROR,
+                       fmt::format( "[{}:{}] in [file={}], [instance_name={}]",__func__,__LINE__,__FILE__,_instance_name));
             }
 
         } // ctor configuration
