@@ -41,7 +41,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/optional.hpp>
 
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 #include "objDesc.hpp"
 

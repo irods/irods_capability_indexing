@@ -11,7 +11,7 @@
 #include "rsModAVUMetadata.hpp"
 #include "irods_hasher_factory.hpp"
 #include "MD5Strategy.hpp"
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 #include "irods_log.hpp"
 
 #include "transport/default_transport.hpp"

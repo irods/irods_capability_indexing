@@ -3,7 +3,7 @@
 #include <string>
 #include "irods_exception.hpp"
 #include "rodsErrorTable.h"
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 namespace irods {
     namespace indexing {

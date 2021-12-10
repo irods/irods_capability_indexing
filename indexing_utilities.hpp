@@ -7,7 +7,7 @@
 #include <boost/any.hpp>
 #include <string>
 
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 #include "rcMisc.h"
 #include "configuration.hpp"
 
