@@ -23,7 +23,7 @@ def install_building_dependencies(externals_directory):
                       "irods-externals-cpr1.3.0-1",
                       "irods-externals-elasticlient0.1.0-2",
                       "irods-externals-jansson2.7-0",
-                      "irods-externals-json3.7.3-0",
+                      "irods-externals-json3.10.4-0",
                       "irods-externals-libarchive3.3.2-1",
                       "irods-externals-zeromq4-14.1.6-0"]
     if externals_directory == 'None' or externals_directory is None:
