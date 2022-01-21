@@ -217,9 +217,10 @@ namespace {
                                             &obj_inp->condInput,
                                             DEST_RESC_HIER_STR_KW);
                 if(!resc_hier) {
-                    THROW(SYS_INVALID_INPUT_PARAM, "resc hier is null");
+                    const auto Message = boost::str(
+                        boost::format("Will not initiate full-text indexing of new REPL (object path '%s') because resc hier is null [irods/irods#6100].") % object_path);
+                    THROW(SYS_INVALID_INPUT_PARAM, Message.c_str());
                 }
-
                 irods::hierarchy_parser parser;
                 parser.set_string(resc_hier);
                 parser.last_resc(source_resource);
