@@ -742,7 +742,7 @@ namespace {
             }
         }
         auto fileName = obj ["fileName"] = irods_path.object_name();
-        obj ["url"] = fmt::format(config->urlTemplate, _obj_path);
+        obj ["url"] = fmt::format(fmt::runtime(config->urlTemplate), _obj_path);
         obj["mimeType"] = (is_collection ? "" : get_default_mime_type (fileName));
         return obj;
 
