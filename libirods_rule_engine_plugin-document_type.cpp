@@ -1,14 +1,14 @@
 
 #define IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
 #define IRODS_QUERY_ENABLE_SERVER_SIDE_API
-#include "irods_query.hpp"
-#include "irods_re_plugin.hpp"
-#include "irods_re_ruleexistshelper.hpp"
+#include <irods/irods_query.hpp>
+#include <irods/irods_re_plugin.hpp>
+#include <irods/irods_re_ruleexistshelper.hpp>
 #include "utilities.hpp"
 #include "plugin_specific_configuration.hpp"
 #include "configuration.hpp"
-#include "filesystem.hpp"
-#include "dstream.hpp"
+#include <irods/filesystem.hpp>
+#include <irods/dstream.hpp>
 
 #include <boost/any.hpp>
 #include <sstream>

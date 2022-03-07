@@ -1,10 +1,10 @@
 
 #include "plugin_specific_configuration.hpp"
-#include "irods_server_properties.hpp"
-#include "irods_exception.hpp"
+#include <irods/irods_server_properties.hpp>
+#include <irods/irods_exception.hpp>
 #include "fmt/format.h"
-#include "rodsLog.h"
-#include "irods_log.hpp"
+#include <irods/rodsLog.h>
+#include <irods/irods_log.hpp>
 
 
 namespace irods {

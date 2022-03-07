@@ -1,26 +1,26 @@
 
-#include "irods_server_properties.hpp"
-#include "irods_re_plugin.hpp"
+#include <irods/irods_server_properties.hpp>
+#include <irods/irods_re_plugin.hpp>
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
 
 #define IRODS_METADATA_ENABLE_SERVER_SIDE_API
 #define IRODS_QUERY_ENABLE_SERVER_SIDE_API
 
-#include "metadata.hpp"
-#include "irods_at_scope_exit.hpp"
+#include <irods/metadata.hpp>
+#include <irods/irods_at_scope_exit.hpp>
 
-#include "irods_query.hpp"
-#include "irods_virtual_path.hpp"
+#include <irods/irods_query.hpp>
+#include <irods/irods_virtual_path.hpp>
 
-#include "rsExecMyRule.hpp"
-#include "rsOpenCollection.hpp"
-#include "rsReadCollection.hpp"
-#include "rsCloseCollection.hpp"
-#include "rsModAVUMetadata.hpp"
+#include <irods/rsExecMyRule.hpp>
+#include <irods/rsOpenCollection.hpp>
+#include <irods/rsReadCollection.hpp>
+#include <irods/rsCloseCollection.hpp>
+#include <irods/rsModAVUMetadata.hpp>
 
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
-#include "filesystem.hpp"
+#include <irods/filesystem.hpp>
 
 #include <boost/any.hpp>
 #include <boost/regex.hpp>

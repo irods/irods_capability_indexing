@@ -1,8 +1,8 @@
 #ifndef PLUGIN_SPECIFIC_CONFIGURATION_HPP
 #define PLUGIN_SPECIFIC_CONFIGURATION_HPP
 #include <string>
-#include "irods_exception.hpp"
-#include "rodsErrorTable.h"
+#include <irods/irods_exception.hpp>
+#include <irods/rodsErrorTable.h>
 #include <nlohmann/json.hpp>
 
 namespace irods {

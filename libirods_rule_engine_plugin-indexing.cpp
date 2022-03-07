@@ -2,17 +2,17 @@
 // =-=-=-=-=-=-=-
 // irods includes
 #define IRODS_QUERY_ENABLE_SERVER_SIDE_API
-#include "irods_query.hpp"
-#include "irods_re_plugin.hpp"
-#include "irods_re_ruleexistshelper.hpp"
-#include "irods_hierarchy_parser.hpp"
-#include "irods_resource_backport.hpp"
-#include "rsModAVUMetadata.hpp"
+#include <irods/irods_query.hpp>
+#include <irods/irods_re_plugin.hpp>
+#include <irods/irods_re_ruleexistshelper.hpp>
+#include <irods/irods_hierarchy_parser.hpp>
+#include <irods/irods_resource_backport.hpp>
+#include <irods/rsModAVUMetadata.hpp>
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 
-#include "filesystem.hpp"
+#include <irods/filesystem.hpp>
 
-#include <irods_log.hpp>
+#include <irods/irods_log.hpp>
 
 #include "utilities.hpp"
 #include "indexing_utilities.hpp"
@@ -43,7 +43,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "objDesc.hpp"
+#include <irods/objDesc.hpp>
 
 using namespace std::string_literals;
 
