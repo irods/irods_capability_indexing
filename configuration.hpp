@@ -2,8 +2,8 @@
 #define CONFIGURATION_HPP
 
 #include <string>
-#include "rodsLog.h"
-#include "irods_log.hpp"
+#include <irods/rodsLog.h>
+#include <irods/irods_log.hpp>
 
 namespace irods {
     namespace indexing {

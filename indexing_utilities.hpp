@@ -8,7 +8,7 @@
 #include <string>
 
 #include <nlohmann/json.hpp>
-#include "rcMisc.h"
+#include <irods/rcMisc.h>
 #include "configuration.hpp"
 
 namespace irods {

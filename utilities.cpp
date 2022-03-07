@@ -1,6 +1,6 @@
 
 #include "utilities.hpp"
-#include "rcMisc.h"
+#include <irods/rcMisc.h>
 
 namespace irods {
     namespace indexing {

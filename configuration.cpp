@@ -2,8 +2,8 @@
 #include "configuration.hpp"
 #include "plugin_specific_configuration.hpp"
 #include "fmt/format.h"
-#include "rodsLog.h"
-#include "irods_log.hpp"
+#include <irods/rodsLog.h>
+#include <irods/irods_log.hpp>
 
 namespace irods {
     namespace indexing {
