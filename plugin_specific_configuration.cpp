@@ -2,7 +2,7 @@
 #include "plugin_specific_configuration.hpp"
 #include <irods/irods_server_properties.hpp>
 #include <irods/irods_exception.hpp>
-#include "fmt/format.h"
+#include <fmt/format.h>
 #include <irods/rodsLog.h>
 #include <irods/irods_log.hpp>
 

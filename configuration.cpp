@@ -1,7 +1,7 @@
 
 #include "configuration.hpp"
 #include "plugin_specific_configuration.hpp"
-#include "fmt/format.h"
+#include <fmt/format.h>
 #include <irods/rodsLog.h>
 #include <irods/irods_log.hpp>
 
