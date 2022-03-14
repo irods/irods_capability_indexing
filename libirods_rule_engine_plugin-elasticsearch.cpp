@@ -18,12 +18,12 @@
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include <irods/filesystem.hpp>
 
-#include "fmt/format.h"
-#include "cpr/api.h"
-#include "cpr/response.h"
-#include "elasticlient/client.h"
-#include "elasticlient/bulk.h"
-#include "elasticlient/logging.h"
+#include <fmt/format.h>
+#include <cpr/api.h>
+#include <cpr/response.h>
+#include <elasticlient/client.h>
+#include <elasticlient/bulk.h>
+#include <elasticlient/logging.h>
 
 #include <boost/any.hpp>
 #include <boost/format.hpp>
