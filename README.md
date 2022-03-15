@@ -84,3 +84,23 @@ irods_policy_indexing_metadata_purge_<technology>
 ```
 irods_policy_indexing_document_type_<technology>
 ```
+
+### Plugin Testing
+
+Caveats:
+   - start from a baseline configuration with no indexing plugins installed.
+
+Prerequisites:
+   - Install a Java 8 JRE or JDK (OpenJDK versions will suffice).
+   - Download, untar, and run the ElasticSearch package or equivalent:
+     ```
+     elasticsearch-7.4.2/bin/elasticsearch --daemonize -E discovery.type=single-node -E http.port=9100
+     ```
+     (Note, a kernel parameter change may be necessary: `sysctl -w vm.max_map_count=262144` .)
+   - To signal all tests should be run, even those requiring the python-irodsclient:
+      * `Bash> export MANUALLY_TEST_INDEXING_PLUGIN=1`
+      * install Python3 with the pip package.
+   - Run the following as the service account user:
+     ```
+     cd ~/scripts ; python run_tests.py --run_s test_plugin_indexing.TestIndexingPlugin
+     ```
