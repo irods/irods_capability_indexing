@@ -420,6 +420,29 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
             self.assertTrue( condition )
         return condition
 
+    def test_iput_with_metadata__92(self):
+        try:
+            create_metadata_index(DEFAULT_METADATA_INDEX)
+            with indexing_plugin__installed():
+                with session.make_session_for_existing_admin() as ses:
+                    path_to_home = '/{0.zone_name}/home/{0.username}'.format(ses)
+                    test_file = tempfile.NamedTemporaryFile()
+                    test_path = path_to_home + "/test_issue_92"
+                    setup = [ ('create',      ['-C',{'path':test_path, 'delete_tree_when_done': True }]),
+                              ('add_AVU_ind', ['-C',{'path':test_path, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                              ('sleep_for',   ['',{'seconds':5}]),
+                              ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]) ]
+                    with self.logical_filesystem_for_indexing( setup, ses ):
+                        ses.assert_icommand(['iput', '--metadata', 'attr0;y;z;attr1;b;c', test_file.name, test_path], 'STDOUT')
+                        self.assertIsNotNone( repeat_until (operator.eq, 1, transform = number_of_hits)
+                                                                (search_index_for_avu_attribute_name)
+                                                                (DEFAULT_METADATA_INDEX, 'attr0'))
+                        self.assertEqual( 1, number_of_hits(search_index_for_avu_attribute_name(DEFAULT_METADATA_INDEX,'attr1')) )
+        finally:
+            delete_metadata_index(DEFAULT_METADATA_INDEX)
+            with session.make_session_for_existing_admin() as ses:
+                ses.assert_icommand("iadmin rum") # remove unused metadata
+
     def test_throttle_limit_45(self):
         def indexing_flag_exists(ses,coll):
             rc,out,_ = ses.assert_icommand(["iquest", "--no-page", "%s", "select COLL_NAME where META_COLL_ATTR_NAME = 'irods::indexing::flag' "
@@ -588,7 +611,7 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                                                                                                                       mdidx = DEFAULT_METADATA_INDEX))
                     admin_session.assert_icommand('iput {0} {1}'.format(f.name,collection))
                     data_object_path = collection + "/" + os.path.basename(f.name)
-                    admin_session.assert_icommand('imeta set -d {data_object_path} atr0 val0'.format(**locals()))
+                    admin_session.assert_icommand('imeta set -d {data_object_path} attr0 val0'.format(**locals()))
 
                     if debugFileName: debugPrt = lambda *a,**k: print(*a,file=open(debugFileName,'a'),**k)
                     else:             debugPrt = lambda *a,**k: None
@@ -596,11 +619,11 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     self.assertIsNotNone (
                         repeat_until (operator.eq, 1, transform = number_of_hits, debugPrinter = debugPrt)
                                           (search_index_for_avu_attribute_name)
-                                          (DEFAULT_METADATA_INDEX, 'atr0')
+                                          (DEFAULT_METADATA_INDEX, 'attr0')
                     )
                     delete_metadata_index()
                     sleep(5) ; debugPrt (">>>>")
-                    admin_session.assert_icommand('imeta rm -d {data_object_path} atr0 val0'.format(**locals()))
+                    admin_session.assert_icommand('imeta rm -d {data_object_path} attr0 val0'.format(**locals()))
 
                     self.assertIsNotNone ( repeat_until (operator.eq, True, transform = lambda x: 'metadata_purge' in x[1], debugPrinter = debugPrt)
                                                             (lambda : admin_session.assert_icommand("iqstat", "STDOUT" )) () )

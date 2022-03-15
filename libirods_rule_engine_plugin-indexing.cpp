@@ -201,6 +201,15 @@ namespace {
                     object_path,
                     _rei->rsComm->clientUser.userName,
                     source_resource);
+
+                const char* metadata_included = getValByKey(&obj_inp->condInput, METADATA_INCLUDED_KW);
+                if (metadata_included)
+                {
+                    idx.schedule_metadata_indexing_event(
+                        object_path,
+                        _rei->rsComm->clientUser.userName, "a", "v", "u"); // "a","v","u" values are not significant; this is
+                                                                           // just a trigger to (re-)index all AVUs.  Ref: #117
+                }
             }
             else if("pep_api_data_obj_repl_post" == _rn) {
                 auto it = _args.begin();
@@ -515,12 +524,14 @@ namespace {
                         map.insert( {row[0],row[1],row[2]} );
                     }
                     if (when == "post") {
+
                         std::vector<metadata_tuple> avus_added_or_removed;
+
                         const auto & pre_map = atomic_metadata_tuples[ "pre" ];
                         set_symmetric_difference (  pre_map.begin(), pre_map.end(),
                                                     map.cbegin(), map.cend(),  std::back_inserter(avus_added_or_removed));
-                        //dwm-
-                        for (const auto & [attribute, value, units] : avus_added_or_removed) {
+
+                        for (const auto & [attribute, value, units]: avus_added_or_removed) {
                             if (attribute != config->index) {
                                 irods::indexing::indexer idx{_rei, config->instance_name_};
                                 idx.schedule_metadata_indexing_event(
@@ -529,7 +540,7 @@ namespace {
                                         attribute,
                                         value,
                                         units);
-                                break;
+                                break;           // only need one event to re-index all AVU's
                             }
                         }
                     }
