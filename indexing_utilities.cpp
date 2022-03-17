@@ -264,22 +264,16 @@ namespace irods {
                                          _index_type);
             fsp start_path{_collection_name};
 
-            unsigned int job_limit = 0;
-            unsigned int job_max = std::numeric_limits<decltype(job_limit)>::max();
+            int job_limit = config_.job_limit;
+            int job_max = std::numeric_limits<decltype(job_limit)>::max();
 
-            if (config_.job_limit.size()) {
-                    try{ job_limit = boost::lexical_cast<unsigned long>(config_.job_limit); }
-                    catch( const boost::bad_lexical_cast & e) {
-                        irods::log(LOG_WARNING,
-                            fmt::format( R"Qu(.String parameter "job_limit_per_collection_indexing_operation")Qu"
-                            R"Qu([should translate to unsigned integer (got "{}" instead)])Qu", config_.job_limit));
-                    }
-                    if (job_limit > job_max) {
-                        job_limit = job_max;
-                        irods::log(LOG_WARNING,
-                            fmt::format( R"Qu(.String parameter "job_limit_per_collection_indexing_operation")Qu"
-                            "too large, clipped to: {}", job_max));
-                    }
+            if (job_limit <= 0) {
+                job_limit = job_max;  // 0 is the advertised default
+                if (job_limit < 0) { // negative value could result from a value > INT_MAX
+                    irods::log(LOG_WARNING,
+                        fmt::format( R"Qu(Parameter "job_limit_per_collection_indexing_operation" is )Qu"
+                            "too large or negative, clipped to: {}", job_max));
+                }
             }
 
             auto iter_end = fsvr::recursive_collection_iterator{};
@@ -543,17 +537,8 @@ namespace irods {
         std::string indexer::generate_delay_execution_parameters() {
             std::string params{config_.delay_parameters + "<INST_NAME>" + config_.instance_name_ + "</INST_NAME>"};
 
-            int min_time{1};
-            try {
-                min_time = boost::lexical_cast<int>(config_.minimum_delay_time);
-            }
-            catch(const boost::bad_lexical_cast&) {}
-
-            int max_time{30};
-            try {
-                max_time = boost::lexical_cast<int>(config_.maximum_delay_time);
-            }
-            catch(const boost::bad_lexical_cast&) {}
+            int min_time = config_.minimum_delay_time <= 0 ?  1 : config_.minimum_delay_time;
+            int max_time = config_.maximum_delay_time <= 0 ? 30 : config_.maximum_delay_time;
 
             std::string sleep_time{"1"};
             try {
