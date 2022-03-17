@@ -15,13 +15,21 @@ namespace irods {
                     }
                 }; // capture_parameter
 
+                // integer-or-string parameters
+
+                using configuration_parameters::load;
+
+                job_limit = load<int>(cfg, "job_limit_per_collection_indexing_operation");
+                minimum_delay_time = load<int>(cfg, "minimum_delay_time", 1);
+                maximum_delay_time = load<int>(cfg, "maximum_delay_time", 30);
+
+                // string parameters
+
                 capture_parameter("index", index);
-                capture_parameter("minimum_delay_time", minimum_delay_time);
-                capture_parameter("job_limit_per_collection_indexing_operation", job_limit);
                 capture_parameter("url_template", urlTemplate);
-                capture_parameter("maximum_delay_time", maximum_delay_time);
-                capture_parameter("delay_parameters",   delay_parameters);
-                capture_parameter("collection_test_flag",  collection_test_flag);
+                capture_parameter("delay_parameters", delay_parameters);
+                capture_parameter("collection_test_flag", collection_test_flag);
+
             } catch ( const boost::bad_any_cast& _e ) {
                 THROW( INVALID_ANY_CAST, _e.what() );
             } catch ( const exception _e ) {
