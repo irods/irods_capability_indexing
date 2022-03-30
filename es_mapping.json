@@ -27,6 +27,20 @@
 					"type": "date",
 					"format": "epoch_second"
 				},
+        			"creator": {
+          				"type": "keyword"
+        			},
+        			"userPermissions": {
+          				"type": "nested",
+          				"properties": {
+            					"permission": {
+              						"type": "keyword"
+            					},
+            					"user": {
+              						"type": "keyword"
+            					}
+          				}
+        			},
 				"metadataEntries": {
 					"type": "nested",
 					"properties": {

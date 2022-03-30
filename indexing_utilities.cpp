@@ -36,7 +36,11 @@
 #include <fmt/format.h>
 #include "json.hpp"
 #include "cpp_json_kw.hpp"
+#include "path_calc.hpp"
 
+#include <tuple>
+#include <string>
+#include <set>
 
 using namespace std::string_literals;
 
@@ -242,6 +246,25 @@ namespace irods {
                                 generate_delay_execution_parameters());
         }
 
+        struct index_info
+        {
+        public:
+            index_info ( const std::string & index_name_
+                        ,const std::string & index_type_
+                        ,const std::string & index_tech_ )
+                : index_name {index_name_}
+                 ,index_type {index_type_}
+                 ,index_tech {index_tech_}
+            {
+            }
+            bool operator< (const index_info & other) const { return index_name < other.index_name ||
+                                                                     index_type < other.index_type ||
+                                                                     index_tech < other.index_tech;  }
+            std::string index_name;
+            std::string index_type;
+            std::string index_tech;
+        };
+
         // - Starting at _collection_name , recurse over every sub-element of the tree
         // - (including data objects and collections and starting with the root).
         // - Call schedule_policy_event_for_object for every object or collection
@@ -257,6 +280,45 @@ namespace irods {
             namespace fsvr = irods::experimental::filesystem::server;
             using     fsp  = fs::path;
             rsComm_t& comm = *rei_->rsComm;
+
+            auto calculate_indexing_avus = [&] (const std::string & collname)
+            {
+                try {
+                    std::set<index_info> s;
+                    irods::query q {&comm,
+                        fmt::format("select META_COLL_ATTR_NAME,META_COLL_ATTR_VALUE,META_COLL_ATTR_UNITS where"
+                                    " COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}' "
+                                    " and  META_COLL_ATTR_VALUE like '%::metadata'", collname, config_.index)};
+                    for (const auto &row : q) {
+                        std::string idx_name, idx_type, idx_tech;
+                        std::tie(idx_name, idx_type) = irods::indexing::parse_indexer_string(row[1]);
+                        idx_tech = row[2];
+                        s.insert({idx_name, idx_type, idx_tech});
+                    }
+                    return s;
+                }
+                catch (const std::exception& e) {
+                    THROW( SYS_LIBRARY_ERROR , fmt::format("Cannot recover from library error - {}",e.what()));
+                }
+                catch (...) {
+                    THROW( SYS_UNKNOWN_ERROR , "Reached unrecoverable state");
+                }
+            };
+
+            path_calc_and_cache<index_info> idx_info_cache{ calculate_indexing_avus };
+
+            bool search_parent_tags = (_indexer.empty() && _index_name.empty());
+
+            //  The mode defined by (search_parent_tags == true) causes the set of applicable indexing AVU tags
+            //  to be recomputed at every point of iteration in the collection tree (and then cached for the benefit
+            //  of objects within any sub-paths). This is useful for the case of ichmod -r (metadata index-type only),
+            //  and that is currently the only application of this mode.
+
+            if (search_parent_tags && (_index_type != "metadata")) {
+                irods::log(LOG_ERROR, fmt::format("In function {} line {} - inappropriate use of search_parent_tags mode outside of 'metadata' index-type",
+                            __func__, __LINE__));
+                return;
+            }
 
             const auto indexing_resources = get_indexing_resource_names();
             const auto policy_name = operation_and_index_types_to_policy_name(
@@ -308,80 +370,107 @@ namespace irods {
 
             struct query_failed : public std::runtime_error {
                 query_failed( const std::string& e = "Query failed to fetch # of jobs active" )
-			: std::runtime_error{e} {}
+                        : std::runtime_error{e} {}
             };
             struct job_limit_precision : public std::runtime_error {
                 job_limit_precision( const std::string& e = "Job Limits may not exceed 32-bit unsigned integer precision" )
-			: std::runtime_error{e} {}
+                        : std::runtime_error{e} {}
             };
 
+            try {
+                for (auto path = start_path; ; ++iter) {
+                    const auto s = fsvr::status(comm,path);
+                    bool is_collection = fsvr::is_collection(s);
+                    bool is_data_object = fsvr::is_data_object(s);
+                    if (is_data_object || is_collection) {
+                        try {
+                            std::string resc_name;
+                            if (is_data_object) {
+                                resc_name = get_indexing_resource_name_for_object(
+                                                       path.string(),
+                                                       indexing_resources);
+                            }
 
-            for (auto path = start_path; ; ++iter) {
-                const auto s = fsvr::status(comm,path);
-                bool is_collection = fsvr::is_collection(s);
-                bool is_data_object = fsvr::is_data_object(s);
-                if (is_data_object || is_collection) {
-                    try {
-                        std::string resc_name;
-                        if (is_data_object) {
-                            resc_name = get_indexing_resource_name_for_object(
-                                                   path.string(),
-                                                   indexing_resources);
-                        }
+                            // if job limit is exceeded, wait before spawning more jobs
 
-                        if (job_limit > 0 && n_jobs >= job_limit) {
-                            // The job limit parameter should be a large number, in the thousands or more perhaps, but small
-                            // enough so that indexing your largest collections doesn't fill up all of virtual memory.
-                            for(;;) {
-                                query<rsComm_t> qobj{comm_, JOB_QUERY_STRING, 1};
-                                for (const auto & row: qobj) {
-                                    auto count = std::stol( row[0] );
-                                    if (count > job_max) { throw job_limit_precision{}; }
-                                    n_jobs = count;
-                                    break;
-                                }
-                                // The approach to throttling is simply to wait until the number of delayed tasks falls
-                                // down to the LOW_WATER_MARK and then exit the wait loop to fill up the task queue again.
-                                // Because we're already in a delayed task, this does not impact the plugin's response time.
-                                if (n_jobs > LOW_WATER_MARK) {
-                                    sleep(1);
-                                }
-                                else {
-                                    break;
+                            if (job_limit > 0 && n_jobs >= job_limit) {
+                                // The job limit parameter should be a large number, in the thousands or more perhaps, but small
+                                // enough so that indexing your largest collections doesn't fill up all of virtual memory.
+                                for(;;) {
+                                    query<rsComm_t> qobj{comm_, JOB_QUERY_STRING, 1};
+                                    for (const auto & row: qobj) {
+                                        auto count = std::stol( row[0] );
+                                        if (count > job_max) { throw job_limit_precision{}; }
+                                        n_jobs = count;
+                                        break;
+                                    }
+                                    // The approach to throttling is simply to wait until the number of delayed tasks falls
+                                    // down to the LOW_WATER_MARK and then exit the wait loop to fill up the task queue again.
+                                    // Because we're already in a delayed task, this does not impact the plugin's response time.
+                                    if (n_jobs > LOW_WATER_MARK) {
+                                        sleep(1);
+                                    }
+                                    else {
+                                        break;
+                                    }
                                 }
                             }
-                        }
 
-                        if ( ! (is_collection && _index_type == "full_text" )) {
-                            schedule_policy_event_for_object(
-                                policy_name,
-                                path.string(),
-                                _user_name,
-                                EMPTY_RESOURCE_NAME,
-                                _indexer,
-                                _index_name,
-                                _index_type,
-                                generate_delay_execution_parameters(),
-                                {},{},{},
-                                {{ "job_category_tag", unique_key }} );
+                            if ( search_parent_tags ) {
+                                // - Note: this mode is currently used only in support of ichmod, ie. with the metadata index-type.
+                                auto info_set = idx_info_cache.accum( path.string() );
+                                for (auto info : info_set) {
+                                    schedule_policy_event_for_object(
+                                        policy_name,
+                                        path.string(),
+                                        _user_name,
+                                        EMPTY_RESOURCE_NAME,
+                                        info.index_tech,
+                                        info.index_name,
+                                        info.index_type,
+                                        generate_delay_execution_parameters(),
+                                        {},{},{},
+                                        {{ "job_category_tag", unique_key }} );
+                                    ++n_jobs;
+                                }
+                            }
+                            else if (!(is_collection && _index_type == "full_text")) { // full_text is meaningless for collection objects
+                                schedule_policy_event_for_object(
+                                    policy_name,
+                                    path.string(),
+                                    _user_name,
+                                    EMPTY_RESOURCE_NAME,
+                                    _indexer,
+                                    _index_name,
+                                    _index_type,
+                                    generate_delay_execution_parameters(),
+                                    {},{},{},
+                                    {{ "job_category_tag", unique_key }} );
 
-                            ++n_jobs;
+                                ++n_jobs;
+                            }
                         }
-                    }
-                    catch(const exception& _e) {
-                        rodsLog(
-                            LOG_ERROR,
-                            "failed to find indexing resource (error code=[%ld]) for object [%s]",static_cast<long>(_e.code()),
-                            path.string().c_str());
-                    }
-                    catch (const std::runtime_error & e) {
-                        irods::log(LOG_ERROR,fmt::format("Abort indexing collection: {}",e.what()));
-                        break;
-                    }
-                    if (iter != iter_end) { path = iter->path(); }
-                                     else { break; }
-                } // if collection or data object
-            } // for path
+                        catch(const exception& _e) {
+                            rodsLog(
+                                LOG_ERROR,
+                                "failed to find indexing resource (error code=[%ld]) for object [%s]", static_cast<long>(_e.code()),
+                                path.c_str());
+                        }
+                        catch (const std::runtime_error & e) {
+                            irods::log(LOG_ERROR, fmt::format("Abort indexing collection: {}", e.what()));
+                            break;
+                        }
+                        if (iter != iter_end) { path = iter->path(); }
+                                         else { break; }
+                    } // if collection or data object
+                } // for path
+            }
+            catch(const std::exception & e) {
+                rodsLog(LOG_ERROR, "file [%s] function [%s] line [%d] General exception - %s ", __FILE__ , __func__, __LINE__, e.what());
+            }
+            catch(...) {
+                rodsLog(LOG_ERROR, "file [%s] function [%s] line [%d] Unknown error", __FILE__ , __func__, __LINE__);
+            }
         } // schedule_policy_events_for_collection
 
         /*
@@ -418,9 +507,9 @@ namespace irods {
         void indexer::schedule_metadata_indexing_event(
             const std::string& _object_path,
             const std::string& _user_name,
-            const std::string& _attribute,
-            const std::string& _value,
-            const std::string& _units) {
+            const std::string& _attribute,   //  Note that _attribute, _value, and _units no longer matter because the  metadata indexing operation for
+            const std::string& _value,       //  use of the NIEHS elasticsearch schema collects all of an object's AVU's into the same record.
+            const std::string& _units) {     //  Every AVU on an object is re-queried and collected into the index, regardless.
 
             schedule_policy_events_given_object_path(
                 irods::indexing::operation_type::index,

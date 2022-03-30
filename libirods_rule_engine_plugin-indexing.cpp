@@ -8,6 +8,8 @@
 #include "irods_hierarchy_parser.hpp"
 #include "irods_resource_backport.hpp"
 #include "rsModAVUMetadata.hpp"
+#include "modAccessControl.h"
+
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 
 #include "filesystem.hpp"
@@ -33,6 +35,7 @@
 #include <iterator>
 #include <algorithm>
 #include <typeinfo>
+#include <stdexcept>
 
 // =-=-=-=-=-=-=-
 // boost includes
@@ -80,6 +83,7 @@ namespace {
     //-  the object is going away, so there is no harm in deleting mentions of it
     //-  and any subobjects from all indices so computed, even if some of them don't
     //-  refer to the object(s).
+
 
     auto get_indices_for_delete_by_query (rsComm_t& comm, const std::string &_object_name, const bool recurs) -> std::set<std::string>
     {
@@ -412,6 +416,46 @@ namespace {
                 if (auto* p = getValByKey( &obj_inp->condInput, FORCE_FLAG_KW); p != 0) { rm_force_kw = p; }
                 indices_for_rm_coll = get_indices_for_delete_by_query (*_rei->rsComm, obj_inp->objPath, false);
             }
+            else if("pep_api_mod_access_control_post" == _rn ) {
+                irods::indexing::indexer idx{_rei, config->instance_name_};
+                auto it = _args.begin();
+                std::advance(it, 2);
+                if(_args.end() == it) {
+                    THROW(
+                        SYS_INVALID_INPUT_PARAM,
+                        "invalid number of arguments");
+                }
+                try {
+                    const auto* access_ctl = boost::any_cast<modAccessControlInp_t*>(*it);
+                    if (access_ctl) {
+                        const auto &[recursive, level_, userN_, zone_, logical_path] = *access_ctl;
+
+                        namespace fsvr = irods::experimental::filesystem::server;
+                        if (recursive && fsvr::is_collection(*_rei->rsComm,logical_path)) {
+                            idx.schedule_collection_operation(
+                                irods::indexing::operation_type::index,
+                                logical_path,
+                                _rei->rsComm->clientUser.userName,
+                                "::metadata",  //value // -> Empty fields for index name, type, and technology
+                                ""             //units //    technology will signal that the collection operation
+                                );                     //    should search upward in the hierarchy for indexing tags.
+                        }
+                        else {
+                            idx.schedule_metadata_indexing_event(
+                                logical_path,
+                                _rei->rsComm->clientUser.userName,
+                                "null", // attribute, // -> the actual values are irrelevant now that we're using the
+                                "bb",   // value,     //    NIEHS metadata schema
+                                "cc"    // units
+                            );
+                        }
+                    }
+                }
+                catch(const std::exception &e) {
+                     const char* message = e.what();
+                     rodsLog(LOG_NOTICE,"Exception during pep_api_data_obj_unlink_post: %s",message);
+                }
+            }
             else if("pep_api_data_obj_unlink_post" == _rn) {
                 auto it = _args.begin();
                 std::advance(it, 2);
@@ -474,6 +518,21 @@ namespace {
                     idx.schedule_metadata_purge_for_recursive_rm_object(obj_inp->collName, recurseInfo);
                 }
             }
+            else if("pep_api_atomic_apply_acl_operations_post" == _rn) {
+                    auto it = _args.begin();
+                    std::advance(it, 2);
+                    auto request = boost::any_cast<BytesBuf*>(*it);
+                    std::string requ_str {(const char*)request->buf,unsigned(request->len)};
+                    const auto requ_json = nlohmann::json::parse( requ_str );
+                    const auto obj_path = requ_json["logical_path"].get<std::string>();
+                    irods::indexing::indexer idx{_rei, config->instance_name_};
+                    idx.schedule_metadata_indexing_event(
+                        obj_path,
+                        _rei->rsComm->clientUser.userName,
+                        "attribute",
+                        "value",
+                        "units");
+            }
             else if (_rn == "pep_api_atomic_apply_metadata_operations_pre"
                   || _rn == "pep_api_atomic_apply_metadata_operations_post")
             {
@@ -520,7 +579,7 @@ namespace {
                         const auto & pre_map = atomic_metadata_tuples[ "pre" ];
                         set_symmetric_difference (  pre_map.begin(), pre_map.end(),
                                                     map.cbegin(), map.cend(),  std::back_inserter(avus_added_or_removed));
-                        //dwm-
+
                         for (const auto & [attribute, value, units] : avus_added_or_removed) {
                             if (attribute != config->index) {
                                 irods::indexing::indexer idx{_rei, config->instance_name_};
@@ -698,6 +757,188 @@ namespace {
         return retvalue.size() ? retvalue : "application/octet-stream";
     }
 
+    class permissions_calculator {
+
+    public:
+
+        static std::unique_ptr<permissions_calculator> ptr ; // lazy instantiation
+
+    private:
+
+        //  Data structures used in tracking user/group permissions.
+
+        std::map<std::string,std::string> users_{}, groups_{};
+        std::map<std::string,std::list<std::string>> members_{};
+        std::map<std::string,int> user_entry_{};
+        std::multimap<int,std::string> user_perms_{}, group_perms_{};
+        std::string owner_{};
+
+        //  idx_ is both:
+        //     - an index into the target permissions array (in the JSON) when filling that element.
+        //     - an internal flag which, when non-zero, means that the user permissions tracking data structures have been computed.
+        //  It is used by `reset_perms', thus also indirectly by `calc_perm_info', to determine the need to re-initialize those
+        //  structures before (re-)computation.
+
+        int idx_{0};
+
+        rsComm_t *conn{};
+
+        static std::map<int,std::string> perm_names;
+
+    public:
+
+        //  Is the given user/group name actually a group?
+
+        bool is_group( const std::string& gid ) {
+            return groups_.find(gid) != groups_.end();
+        }
+
+        //  Is the given user a member of the given group ?
+
+        bool is_member_of (const std::string& user_id, const std::string& group_id) {
+            try {
+                const auto& user_list = members_.at(group_id);
+                return std::find( user_list.begin(), user_list.end(), user_id) != user_list.end();
+            }
+            catch (const std::out_of_range&) {
+                irods::log(LOG_ERROR, fmt::format("'{}' is not a group id", group_id));
+            }
+            return false;
+        }
+
+        void calc_perm_info( const std::string& obj_id, const std::string& obj_type);
+
+        //  Helper method.  Reset the data structures that track existing permissions.
+
+        void calc_user_info() {
+            irods::query q{ conn, "select USER_GROUP_NAME,USER_GROUP_ID,USER_NAME,USER_ID"};
+            for (const auto& row : q) {
+                if (row[1] != row[3]) {
+                    members_[row[1]].push_back(row[3]);
+                    groups_[row[1]]=row[0];
+                }
+                else {
+                    users_[row[3]]=row[2];
+                }
+            }
+        }
+
+        //  Helper method.  Reset the data structures that track existing permissions.
+
+        void reset_perms () {
+            if (idx_ != 0) {
+                user_entry_ = {};
+                group_perms_ = {};
+                user_perms_ = {};
+                owner_ = {};
+            }
+            idx_ = 0;
+        }
+
+    public:
+
+        //  Constructor used here to make the global object.  Calculates existing users, groups, and member
+        //  relationships.
+
+        permissions_calculator(rsComm_t *_conn)
+            : conn{_conn}
+        {
+            calc_user_info();
+        }
+
+        //  Copy constructor, preserves user, group and is-a-member information, but resets other data structures
+        //  in preparation for recomputing permissions info.
+
+        permissions_calculator(const permissions_calculator& x, rsComm_t *_conn)
+            : users_{x.users_}
+            , groups_{x.groups_}
+            , members_{x.members_}
+            , conn{_conn}
+        {
+            reset_perms();
+        }
+
+        //  Calculate permissions for the object of the given ID, and fill the nlohmann::json struct with the results.
+
+        void get_perms_list(nlohmann::json & j, const std::string & obj_id, const std::string & obj_type)
+        {
+            calc_perm_info( obj_id, obj_type); // idx_ member will be zero after this call.
+
+            for (const auto & [pm,gid] : group_perms_) {
+                j["userPermissions"][idx_]["permission"] = perm_names.at(pm);
+                j["userPermissions"][idx_++]["user"] = groups_[gid];
+            }
+            for (const auto & [pm,uid] : user_perms_) {
+                j["userPermissions"][idx_]["permission"] = perm_names.at(pm);
+                j["userPermissions"][idx_++]["user"] = users_[uid];
+            }
+            j["creator"] = owner_;
+            idx_ = -1;  // force structures to be reinitialized on reuse
+        }
+    };
+
+    //  Permission codes and the corresponding strings
+
+    std::map<int,std::string> permissions_calculator::perm_names {
+        { 1050 , "read" },
+        { 1120 , "write" },
+        { 1200 , "own"}
+    };
+
+    //  Existing instance of the calculator.  Initializes the first time it's needed in the lifetime
+    //  of the iRODS agent.
+
+    std::unique_ptr<permissions_calculator> permissions_calculator::ptr {};
+
+    //  Calculate ownership and permissions for the object of the given ID
+    //  Note obj_type should be either "DATA" or "COLL".
+
+    void permissions_calculator::calc_perm_info(const std::string& obj_id, const std::string& obj_type)
+    {
+        reset_perms();  // reset the variables used to calculate owner, user_perms and group_perms
+                         //     for later conversion to JSON for indexing.
+
+        /* calculate:
+               owner (aka the creator of the object) */
+        irods::query qown { conn,  boost::str(boost::format("select %s_OWNER_NAME where %s_ID = '%s'")
+                                 % obj_type %  obj_type % obj_id ) };
+        for (const auto & row : qown) {
+            owner_ = row[0];
+            break;
+        }
+
+        /* calculate:
+               group_perms - maps the reported group permissions to the corresponding group IDs
+               user_entry - maps the IDs of users which *not* groups to the permission levels reported for them
+               */
+        irods::query qprm { conn,  boost::str(boost::format("select %s_ACCESS_TYPE,%s_ACCESS_USER_ID where %s_ID = '%s'")
+                                 % obj_type % obj_type % obj_type % obj_id ) };
+        for (const auto& i : qprm) {
+            const auto iperm=std::stol(i[0]);
+            if (is_group(i[1])) {
+                group_perms_.insert(make_pair(iperm, i[1]));
+            }
+            else {
+               user_entry_[i[1]] = iperm;
+            }
+        }
+
+        /* calculate:
+               user_perms - maps reported permissions to the IDs of the corresponding users (guaranteed not to be groups)
+
+               This is done by scanning group_perms to ensure each user in question is not a member of a group having equal
+               or higher privilege.
+               */
+        for (const auto & [uid,iperm] : user_entry_) {
+            bool include_user = true;
+            for (auto it = group_perms_.lower_bound(iperm); it!= group_perms_.end(); it++) {
+                    if (is_member_of(uid,it->second)) { include_user = false; break; }
+            }
+            if (include_user) { user_perms_.insert( make_pair(iperm, uid)); }
+        }
+        // group_perms and user_perms are now ready for storing into the metadata index
+    }
+
     auto get_system_metadata( ruleExecInfo_t* _rei
                              ,const std::string& _obj_path ) -> nlohmann::json {
         using nlohmann::json;
@@ -715,6 +956,13 @@ namespace {
         obj["absolutePath"] = _obj_path;
 
         bool is_collection = false;
+
+        if (!permissions_calculator::ptr) {
+            permissions_calculator::ptr.reset( new permissions_calculator{_rei->rsComm} );
+        }
+        permissions_calculator x{*permissions_calculator::ptr, _rei->rsComm};
+
+        std::string id {};
         if (fsvr::is_data_object(s)) {
             query_str = fmt::format("SELECT DATA_ID , DATA_MODIFY_TIME, DATA_ZONE_NAME, COLL_NAME, DATA_SIZE where DATA_NAME = '{0}'"
                                     " and COLL_NAME = '{1}' ", name, parent_name  );
@@ -725,8 +973,10 @@ namespace {
                 obj["parentPath"] = i[3];
                 obj["dataSize"] = std::stol( i[4] );
                 obj["isFile"] = true;
+                id = i[0];
                 break;
             }
+            x.get_perms_list(obj, id, "DATA" );
         }
         else if (fsvr::is_collection(s)) {
             is_collection = true;
@@ -739,8 +989,10 @@ namespace {
                 obj["parentPath"] = i[3];
                 obj["dataSize"] = 0L;
                 obj["isFile"] = false;
+                id = i[0];
                 break;
             }
+            x.get_perms_list(obj, id, "COLL" );
         }
         auto fileName = obj ["fileName"] = irods_path.object_name();
         obj ["url"] = fmt::format(config->urlTemplate, _obj_path);
@@ -811,11 +1063,14 @@ irods::error rule_exists(
                                     "pep_api_data_obj_unlink_post",
                                     "pep_api_mod_avu_metadata_pre",
                                     "pep_api_mod_avu_metadata_post",
+                                    "pep_api_atomic_apply_acl_operations_post",
                                     "pep_api_data_obj_close_post",
                                     "pep_api_data_obj_put_post",
                                     "pep_api_phy_path_reg_post",
                                     "pep_api_rm_coll_pre",
                                     "pep_api_rm_coll_post",
+                                    "pep_api_mod_access_control_pre",
+                                    "pep_api_mod_access_control_post",
     };
     _ret = rules.find(_rn) != rules.end();
 
