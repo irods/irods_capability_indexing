@@ -12,7 +12,7 @@ def Indexing_PackageName_Regex( package_ext, technology = 'elasticsearch' ):
     tech = re.escape(technology)
     ext = re.escape(package_ext)
     return re.compile(
-        r'irods-rule-engine-plugin-(document-type|{tech}|indexing)-[0-9].*\.{ext}$'.format(**locals())
+        r'irods-rule-engine-plugin-(document-type|{tech}|indexing)_[0-9].*\.{ext}$'.format(**locals())
     )
 
 def get_matching_packages(directory,ext):
@@ -23,12 +23,12 @@ def get_build_prerequisites_all():
     return['gcc', 'swig']
 
 def get_build_prerequisites_apt():
-    pre_reqs = ['uuid-dev', 'libssl-dev', 'libsasl2-2', 'libsasl2-dev', 'python-dev']
+    pre_reqs = ['uuid-dev', 'libssl-dev', 'libsasl2-2', 'libsasl2-dev', 'python3-dev']
     pre_reqs += ['openjdk-8-jre','curl', 'python3-pip']
     return get_build_prerequisites_all()+pre_reqs
 
 def get_build_prerequisites_yum():
-    return get_build_prerequisites_all()+['which', 'java-1.8.0-openjdk-devel', 'libuuid-devel', 'openssl-devel', 'cyrus-sasl-devel', 'python-devel',
+    return get_build_prerequisites_all()+['which', 'java-1.8.0-openjdk-devel', 'libuuid-devel', 'openssl-devel', 'cyrus-sasl-devel', 'python3-devel',
                                           'python3-pip']
 
 def get_build_prerequisites_zypper():
@@ -58,12 +58,6 @@ def install_build_prerequisites():
     Java_Home = os.path.sep.join((java_real_bin.split(os.path.sep))[:-2])
     if not java_version_check.search( java_version_text ):
         raise WrongJavaAsDefault
-    if irods_python_ci_utilities.get_distribution() == 'Ubuntu': # cmake from externals requires newer libstdc++ on ub12
-        if irods_python_ci_utilities.get_distribution_version_major() == '12':
-            irods_python_ci_utilities.install_os_packages(['python-software-properties'])
-            irods_python_ci_utilities.subprocess_get_output(['sudo', 'add-apt-repository', '-y', 'ppa:ubuntu-toolchain-r/test'], check_rc=True)
-            irods_python_ci_utilities.subprocess_get_output(['sudo', 'update-java-alternatives', '--set', 'java-1.8.0-openjdk-amd64'])
-            irods_python_ci_utilities.install_os_packages(['libstdc++6'])
 
 
 class IndexerNotImplemented (RuntimeError): pass
@@ -73,9 +67,9 @@ def install_indexing_engine (indexing_engine):
     if 'elasticsearch' in indexing_engine.lower():
         tempdir = tempfile.mkdtemp()
         url = 'https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.4.2-linux-x86_64.tar.gz'
-        irods_python_ci_utilities.subprocess_get_output(['wget', url])
+        irods_python_ci_utilities.subprocess_get_output(['wget', '-q', url])
         tar_names = [x for x in url.split('/') if '.tar' in x]
-        irods_python_ci_utilities.subprocess_get_output(['tar', '-C', tempdir, '--no-same-owner', '-xvzf', tar_names[-1]])
+        irods_python_ci_utilities.subprocess_get_output(['tar', '-C', tempdir, '--no-same-owner', '-xzf', tar_names[-1]])
         irods_python_ci_utilities.subprocess_get_output(['sudo','useradd','elastic','-s/bin/bash'])
         irods_python_ci_utilities.subprocess_get_output(['sudo', 'chown','-R','elastic',tempdir])
         executables = glob.glob(os.path.join(tempdir,'*','bin','elasticsearch'))
@@ -92,36 +86,40 @@ def main():
     parser.add_option('--output_root_directory')
     parser.add_option('--built_packages_root_directory')
     parser.add_option('--indexing_engine', default='elasticsearch', help='Index/Search Platform needed for plugin test')
+    parser.add_option('--test', metavar='dotted name')
+    parser.add_option('--skip-setup', action='store_false', dest='do_setup', default=True)
     options, _ = parser.parse_args()
-
-    output_root_directory = options.output_root_directory
 
     built_packages_root_directory = options.built_packages_root_directory
     package_suffix = irods_python_ci_utilities.get_package_suffix()
     os_specific_directory = irods_python_ci_utilities.append_os_specific_directory(built_packages_root_directory)
 
-    install_build_prerequisites()
-    irods_python_ci_utilities.subprocess_get_output(['sudo', '-EH', 'pip', 'install', 'unittest-xml-reporting==1.14.0', 'python-qpid-proton==0.30.0'])
+    if options.do_setup:
+        install_build_prerequisites()
 
-    install_indexing_engine(options.indexing_engine)
+        irods_python_ci_utilities.subprocess_get_output(['sudo', '-EH', 'pip', 'install', 'unittest-xml-reporting==1.14.0'])
 
-    # Packages are put either in top level or os-specific subdirectory.
-    # For indexing it seems to be top level for now. But just in case, we check both.
+        install_indexing_engine(options.indexing_engine)
 
-    for directory in ( built_packages_root_directory,
-                       os_specific_directory ):
-        pkgs = get_matching_packages(directory, package_suffix)
-        if pkgs:
-            irods_python_ci_utilities.install_os_packages_from_files( pkgs )
-            break
+        # Packages are put either in top level or os-specific subdirectory.
+        # For indexing it seems to be top level for now. But just in case, we check both.
+        for directory in ( built_packages_root_directory, os_specific_directory ):
+            pkgs = get_matching_packages(directory, package_suffix)
+            if pkgs:
+                irods_python_ci_utilities.install_os_packages_from_files( pkgs )
+                break
+
+    test = options.test or 'test_plugin_indexing'
 
     test_output_file = 'log/test_output.log'
 
     try:
         irods_python_ci_utilities.subprocess_get_output( ['sudo', 'su', '-', 'irods', '-c',
-            'python2 scripts/run_tests.py --xml_output --run_s=test_plugin_indexing 2>&1 |'\
-            ' tee {0}; exit $PIPESTATUS'.format(test_output_file)], check_rc=True)
+            f'python3 scripts/run_tests.py --xml_output --run_s={test} 2>&1 | tee {test_output_file}; exit $PIPESTATUS'],
+            check_rc=True)
+
     finally:
+        output_root_directory = options.output_root_directory
         if output_root_directory:
             irods_python_ci_utilities.gather_files_satisfying_predicate('/var/lib/irods/log', output_root_directory, lambda x: True)
             test_output_file = os.path.join('/var/lib/irods', test_output_file)
