@@ -13,11 +13,7 @@ import zipfile
 import subprocess
 from time import sleep
 from textwrap import dedent
-
-if sys.version_info >= (2, 7):
-    import unittest
-else:
-    import unittest2 as unittest
+import unittest
 
 from ..configuration import IrodsConfig
 from ..controller import IrodsController
@@ -27,7 +23,6 @@ from . import session
 from .. import test
 from .. import paths
 from .. import lib
-import ustrings
 
 import operator
 
@@ -146,7 +141,7 @@ def get_source_books ( prefix_ = 'Books_', instance = None, attr = None ):
     class BooksDownloadError(RuntimeError): pass
     class BooksUnknownError(RuntimeError): pass
 
-    basename = filter(any,SOURCE_BOOKS_URL.split("/"))[-1:]
+    basename = list(filter(any,SOURCE_BOOKS_URL.split("/")))[-1:]
     if ( not basename or not basename[0] or
          not basename[0].lower().endswith('.zip') ): raise BooksURLError
     basename = basename[0]
@@ -413,7 +408,7 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
             if isinstance(try_kill, (float,int,long_type)) and try_kill > 0.0: sleep(try_kill)
         out,_,rc = session_.run_icommand('iqstat')
         if verbose:
-            tempfile.NamedTemporaryFile(prefix='delay-queue-debug--',mode='a',delete=False).write('***\n OUT = ['+out+']***\n')
+            tempfile.NamedTemporaryFile(prefix='delay-queue-debug--',mode='a',delete=False).write('***\n OUT = [{}]***\n'.format(out).encode('utf-8'))
         condition = (rc == 0 and 'No delayed rules' in out)
         if soft_assert:
             self.assertTrue( condition )
@@ -476,13 +471,14 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                 self.remove_all_jobs_from_delay_queue(admin_session)
                 admin_session.assert_icommand('imkdir -p {0}'.format(collection))
                 f = tempfile.NamedTemporaryFile()
-                f.write( "the quick brown fox"
-                        ); f.flush();
+                f.write("the quick brown fox".encode('utf-8'))
+                f.flush()
                 create_fulltext_index()
                 try:
-                    admin_session.assert_icommand("""imeta set -C {coll} """ \
-                                                  """irods::indexing::index {ftidx}::full_text elasticsearch""".format(coll = collection,
-                                                                                                                      ftidx = DEFAULT_FULLTEXT_INDEX))
+                    admin_session.assert_icommand(['imeta', 'set', '-C', collection,
+                                                   'irods::indexing::index',
+                                                   '{}::full_text'.format(DEFAULT_FULLTEXT_INDEX),
+                                                   'elasticsearch'])
                     self.assertEqual(0, number_of_hits(search_index_for_All_object_paths (DEFAULT_FULLTEXT_INDEX)))
                     admin_session.assert_icommand('iput {0} {1}'.format(f.name,collection))
 
@@ -797,7 +793,7 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                         if details_.get('delete_tree_when_done'): collections_to_delete += [details_['path']]
                     elif argument_ == '-d':
                         with tempfile.NamedTemporaryFile() as t:
-                            t.write(details_.get('content',''))
+                            t.write(details_.get('content','').encode('utf-8'))
                             t.flush();
                             session.assert_icommand('iput -f {0} {1}'.format(t.name,details_['path']))
                 elif instruc == 'delete':
@@ -820,6 +816,10 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
             for p in collections_to_delete:
                 session.assert_icommand(['irm', '-rf', p],'STDOUT','')
 
+    @unittest.skip(
+        'This test requires python-irodsclient. Please run this test manually '
+        'in an environment with python-irodsclient installed.'
+    )
     def test_indexing_with_atomic_metadata_ops_66(self):
         with indexing_plugin__installed():
             test_coll = 'testcoll_66'
@@ -894,7 +894,7 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                                 out,_,rc=admin_session.run_icommand("""iquest --no-page '%s/%s' "select COLL_NAME,DATA_NAME where COLL_NAME like"""\
                                                                     """ '%/{c}/books{i:03}%'" """.format(c=collection,i=n))
                                 self.assertTrue(rc == 0,'iquest failed')
-                                data_obj_name = filter(any,map(lambda s:s.strip(),out.split('\n')))[0]
+                                data_obj_name = list(filter(any,map(lambda s:s.strip(),out.split('\n'))))[0]
                                 attr_j += 1
                                 admin_session.assert_icommand("""imeta set -d {d} attr{j} val0 units0""".format(d = data_obj_name, j=attr_j))
                                 keylist[key] += [ "attr{j}".format(j=attr_j) ]
