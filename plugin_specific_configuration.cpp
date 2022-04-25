@@ -15,13 +15,13 @@ namespace irods {
                 const auto& rule_engines = get_server_property<
                     const nlohmann::json&>(
                             std::vector<std::string>{
-                            CFG_PLUGIN_CONFIGURATION_KW,
-                            PLUGIN_TYPE_RULE_ENGINE});
+                            KW_CFG_PLUGIN_CONFIGURATION,
+                            KW_CFG_PLUGIN_TYPE_RULE_ENGINE});
                 for ( const auto& rule_engine : rule_engines ) {
-                    const auto& inst_name = rule_engine.at( CFG_INSTANCE_NAME_KW ).get_ref<const std::string&>();
+                    const auto& inst_name = rule_engine.at( KW_CFG_INSTANCE_NAME).get_ref<const std::string&>();
                     if ( inst_name == _instance_name ) {
-                        if(rule_engine.count(CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW) > 0) {
-                            return rule_engine.at(CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW);
+                        if(rule_engine.count(KW_CFG_PLUGIN_SPECIFIC_CONFIGURATION) > 0) {
+                            return rule_engine.at(KW_CFG_PLUGIN_SPECIFIC_CONFIGURATION);
                         } // if has PSC
                     } // if inst_name
                 } // for rule_engines
