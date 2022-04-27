@@ -169,7 +169,7 @@ def indexing_plugin__installed(indexing_config=()):
     filename = paths.server_config_path()
     with lib.file_backed_up(filename):
         irods_config = IrodsConfig()
-        irods_config.server_config['advanced_settings']['rule_engine_server_sleep_time_in_seconds'] = 5
+        irods_config.server_config['advanced_settings']['delay_server_sleep_time_in_seconds'] = 5
 
         indexing_plugin_specific_config = {} # hard-wired configuration entries could go here
         indexing_plugin_specific_config.update( indexing_config )
