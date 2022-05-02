@@ -222,8 +222,9 @@ namespace {
                                             DEST_RESC_HIER_STR_KW);
                 if(!resc_hier) {
                     const auto Message = boost::str(
-                        boost::format("Will not initiate full-text indexing of new REPL (object path '%s') because resc hier is null [irods/irods#6100].") % object_path);
-                    THROW(SYS_INVALID_INPUT_PARAM, Message.c_str());
+                        boost::format("Will not initiate full-text indexing of new replica (object path '%s') because resc hier is null [irods/irods#6100].") % object_path);
+                    rodsLog(LOG_DEBUG, Message.c_str());
+                    return;
                 }
                 irods::hierarchy_parser parser;
                 parser.set_string(resc_hier);
