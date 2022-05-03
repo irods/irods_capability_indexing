@@ -55,15 +55,17 @@ The first is the main indexing rule engine plugin, the second is the plugin resp
 
 Within each plugin configuration stanza, the "plugin_specific_configuration" object may contain a number of key-value pairs.  The following pairs are currently applicable for the purpose of setting the indexing capability's operating parameters:
 
-| key                                         |  type  | plugin component |  purpose                                                                        |
-|---------------------------------------------|--------|------------------|---------------------------------------------------------------------------------|
-| minimum_delay_time                          | string |  indexing        | lower limit for randomly generated delay-task intervals                         |
-| maximum_delay_time                          | string |  indexing        | upper limit for randomly generated delay-task intervals                         |
-| es_version                                  | string |  elasticsearch   | set to "6.x" or "7.x" depending on Elasticsearch version (ES 7 default)         |
-| job_limit_per_collection_indexing_operation | string |  indexing        | integer limit to number of concurrent collection operations ("" means no limit) |
-| bulk_count                                  | string |  elasticsearch   | the number of text chunks processed at once for ES full-text indexing           |
-| read_size                                   | int    |  elasticsearch   | the size of individual text chunks processed for ES full-text indexing          |
+| key                                         |      type     | plugin component | default |  purpose                                                                   |
+|---------------------------------------------|---------------|------------------|---------|----------------------------------------------------------------------------|
+| minimum_delay_time                          | int or string |  indexing        |       1 | lower limit for randomly generated delay-task intervals                    |
+| maximum_delay_time                          | int or string |  indexing        |      30 | upper limit for randomly generated delay-task intervals                    |
+| job_limit_per_collection_indexing_operation | int or string |  indexing        |    1000 | integer limit to number of concurrent collection operations (0 = no limit) |
+| es_version                                  | string        |  elasticsearch   |   "7.x" | set to "6.x" or "7.x" depending on Elasticsearch version                   |
+| bulk_count                                  | int           |  elasticsearch   |      10 | the number of text chunks processed at once for ES full-text indexing      |
+| read_size                                   | int           |  elasticsearch   | 4194304 | the size of individual text chunks processed for ES full-text indexing     |
 
+Currently, due to 32-bit limitations on many architectures, int-type parameters should not exceed a value of INT_MAX = 2^31 - 1 = 2147483647 or the results may
+be undefined.
 
 # Policy Implementation
 
