@@ -165,7 +165,7 @@ def es7_exactly (): return '8.' > ES_VERSION >= '7.'
 def es7_or_later(): return ES_VERSION >= '7.'
 
 @contextlib.contextmanager
-def indexing_plugin__installed(indexing_config=()):
+def indexing_plugin__installed(indexing_config=(), server_env_options={}):
     filename = paths.server_config_path()
     with lib.file_backed_up(filename):
         irods_config = IrodsConfig()
@@ -198,7 +198,8 @@ def indexing_plugin__installed(indexing_config=()):
             }
         ]
         irods_config.commit(irods_config.server_config, irods_config.server_config_path)
-        IrodsController().restart()
+        irods_config = IrodsConfig(**server_env_options)
+        IrodsController(irods_config).restart()
         try:
             yield
         finally:
@@ -963,6 +964,39 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                     admin_session.assert_icommand ('irm -fr {}'.format(test_path_1))
             delete_metadata_index()
             delete_fulltext_index()
+
+    def test_load_parameters_as_int_or_string__91(self):
+
+        env_filename = paths.default_client_environment_path()
+        with open(env_filename) as f:
+            cli_env = json.load(f)
+            cli_env['irods_log_level'] = 7
+        new_client_env = json.dumps(cli_env, sort_keys=True, indent=4, separators=(',', ': '))
+
+        server_config_filename = paths.server_config_path()
+        with open(server_config_filename) as f:
+            svr_cfg = json.load(f)
+            svr_cfg['log_level']['legacy'] = 'debug'
+        new_server_config = json.dumps(svr_cfg, sort_keys=True, indent=4, separators=(',', ': '))
+
+        with lib.file_backed_up(server_config_filename), lib.file_backed_up(env_filename):
+            with open(server_config_filename, 'w') as f:
+                f.write(new_server_config)
+            with open(env_filename, 'w') as f_env:
+                f_env.write(new_client_env)
+            config_0 = { 'minimum_delay_time': 20, 'maximum_delay_time': 25, 'job_limit_per_collection_indexing_operation': 2001 }
+            for test_config in [ config_0,                                   # try once with integers ...
+                                 {k:str(v) for k,v in config_0.items()} ]:   # and once with strings
+                with session.make_session_for_existing_admin() as ses:
+                    with indexing_plugin__installed(indexing_config = test_config):
+                        log_offset = lib.get_file_size_by_path(paths.server_log_path())
+                        ses.assert_icommand ('ils' , 'STDOUT');
+                        lib.delayAssert(lambda : all(
+                            1 <= lib.count_occurrences_of_string_in_log( log_path = paths.server_log_path(),
+                                                                         string = "value of {name}: {value}".format(**locals()),
+                                                                         start_index = log_offset)
+                            for name, value in test_config.items()
+                        ))
 
 if __name__ == '__main__':
     unittest.main()
