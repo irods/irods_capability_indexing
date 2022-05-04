@@ -22,7 +22,7 @@ namespace irods {
 
                 using configuration_parameters::load;
 
-                job_limit = load<int>(cfg, "job_limit_per_collection_indexing_operation");
+                job_limit = load<int>(cfg, "job_limit_per_collection_indexing_operation", 1000);
                 minimum_delay_time = load<int>(cfg, "minimum_delay_time", 1);
                 maximum_delay_time = load<int>(cfg, "maximum_delay_time", 30);
 
