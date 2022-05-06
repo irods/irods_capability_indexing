@@ -11,8 +11,9 @@ import os.path
 
 import zipfile
 import subprocess
-from time import sleep
+from time import sleep, time
 from textwrap import dedent
+from datetime import datetime as _datetime
 
 if sys.version_info >= (2, 7):
     import unittest
@@ -243,6 +244,31 @@ def install_python3_virtualenv_with_python_irodsclient(PATH='~/py3',preTestPRCIn
 
 # Assuming use for metadata style of index only
 
+def search_index_for_userPermissions_user_name(index_name, user_name, port = ELASTICSEARCH_PORT):
+    maptype = "" if es7_or_later() else "/text"
+    track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
+    out,_,rc = lib.execute_command_permissive( dedent("""\
+        curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}{maptype}/_search?pretty=true{track_num_hits_as_int} -d '
+        {{
+            "from": 0, "size" : 500,
+            "_source" : ["absolutePath", "userPermissions"],
+            "query" : {{
+                "nested": {{
+                  "path": "userPermissions",
+                  "query": {{
+                    "bool": {{
+                      "must": [
+                        {{ "match": {{ "userPermissions.user": "{user_name}" }} }}
+                      ]
+                    }}
+                  }}
+                }}
+            }}
+        }}' """).format(**locals()))
+    if rc != 0: out = None
+    return out
+
+
 def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEARCH_PORT):
     maptype = "" if es7_or_later() else "/text"
     track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
@@ -345,6 +371,20 @@ def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEA
                                 "lastModifiedDate": {
                                         "type": "date",
                                         "format": "epoch_second"
+                                },
+                                "creator": {
+                                  "type": "keyword"
+                                },
+                                "userPermissions": {
+                                  "type": "nested",
+                                  "properties": {
+                                    "permission": {
+                                      "type": "keyword"
+                                    },
+                                    "user": {
+                                      "type": "keyword"
+                                    }
+                                  }
                                 },
                                 "metadataEntries": {
                                         "type": "nested",
@@ -742,6 +782,92 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                 delete_metadata_index()
                 #test_session.assert_icommand('irm -fr '+test_path, 'STDOUT', '')
 
+    @staticmethod
+    def test_coll_name():
+        return '{:test_%s_%f}'.format(_datetime.now())
+
+    def test_indexing_permissions__81(self):
+        with session.make_session_for_existing_admin() as admin_session,\
+        indexing_plugin__installed(indexing_config = {'minimum_delay_time':'1', 'maximum_delay_time':'3'}):
+            # - Define collections to be used for test.
+            path_to_home = '/{0.zone_name}/home/{0.username}'.format(admin_session)
+            test_path = path_to_home + "/" + self.test_coll_name()
+            #  STRUCTURE: (HOME)-->test_dir/
+            #  chmod user0 data1:       +->dir1(*)-->data1
+            #---------------------      |                               nb: (*) index all sub-objects to DEFAULT_METADATA_INDEX
+            #  chmod -r user1 dir2:     +-->dir2(**)-->dir3(*)-->data3      (**) index all sub-objects to INDEX_2
+            #                                  +-->data2
+            sub_path1 = test_path + "/dir1"
+            sub_path2 = test_path + "/dir2"
+            sub_path3 = test_path + "/dir2/dir3"
+            data_1 = sub_path1 + "/data1"
+            data_2 = sub_path2 + "/data2"
+            data_3 = sub_path3 + "/data3"
+            # - Define another index.
+            INDEX_2 = DEFAULT_METADATA_INDEX+"_2"
+            try:
+
+                # use two indices, to test that multiple index indicators are respected in recursive (-r) ichmod
+                create_metadata_index(DEFAULT_METADATA_INDEX)
+                create_metadata_index(INDEX_2)
+
+                # - Set up a test environment.
+                objects = [
+                    ('create',      ['-C',{'path':test_path, 'delete_tree_when_done': True }]),
+                    ('create',      ['-C',{'path':sub_path1 }]), #--> for ichmod user0 without '-r', on data_1 object only
+                    ('create',      ['-C',{'path':sub_path2 }]), #--> for  ichmod -r user1 - root collection
+                    ('create',      ['-C',{'path':sub_path3 }]), #                         - child collection
+                    ('add_AVU_ind', ['-C',{'path':sub_path1, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                    ('add_AVU_ind', ['-C',{'path':sub_path2, 'index_name': INDEX_2, 'index_type':'metadata'}]),
+                    ('add_AVU_ind', ['-C',{'path':sub_path3, 'index_name': DEFAULT_METADATA_INDEX, 'index_type':'metadata'}]),
+                    ('create',      ['-d',{'path':data_1, 'content':'abc'}]),
+                    ('create',      ['-d',{'path':data_2, 'content':'def'}]),
+                    ('create',      ['-d',{'path':data_3, 'content':'ghi'}]),
+                    ('sleep_for',   ['',{'seconds':5}]),
+                    ('wait_for',    [self.delay_queue_is_empty, {'num_iter':45,'interval':2.125,'threshold':2}]),
+                ]
+
+                # - Enact test environment.
+                with self.logical_filesystem_for_indexing (objects,admin_session):
+
+                    # - Convenience functions.
+                    expected_condition = lambda string: (operator.ge,1) if string != 'null' else (operator.eq,0)
+                    num_hits_multiplier = lambda string: 1 if string != 'null' else 0
+
+                    # - On first pass, add ACLs; on the second, enull them.  Index and test each time.
+
+                    for R_perm,W_perm in [('read','write'),('null','null')]:
+
+                        hits_ = ([],[],[])
+
+                        # - Non-recursive ichmod and wait for results.
+                        admin_session.assert_icommand('ichmod {0} {1} {2}'.format(R_perm,self.user0.username,data_1))
+                        rep_result_0 = repeat_until(*expected_condition(R_perm), transform=make_number_of_hits_fcn(hits_[0])
+                                                  ) (search_index_for_userPermissions_user_name) (DEFAULT_METADATA_INDEX,self.user0.username)
+
+                        # - Recursive ichmod and wait for results.
+                        admin_session.assert_icommand('ichmod -r {0} {1} {2}'.format(W_perm,self.user1.username,sub_path2))
+                        rep_result_1 = repeat_until(*expected_condition(W_perm), transform=make_number_of_hits_fcn(hits_[1])
+                                                   ) (search_index_for_userPermissions_user_name) (INDEX_2,self.user1.username)
+                        rep_result_2 = repeat_until(*expected_condition(W_perm), transform=make_number_of_hits_fcn(hits_[2])
+                                                   ) (search_index_for_userPermissions_user_name) (DEFAULT_METADATA_INDEX,self.user1.username)
+
+                        # - Assert all conditions waited on were met.
+                        self.assertTrue(all([rep_result_0, rep_result_1, rep_result_2]))
+
+                        # - Assert the expected number of index hits.
+                        nhits = lambda array,user: len(list(filter((lambda _:any(e for e in _['_source']['userPermissions'] if e['user'] == user)),
+                                                                               array[0]['hits']['hits'] )))
+                        self.assertEqual( num_hits_multiplier(R_perm)*1,  nhits(hits_[0], self.user0.username) )
+                        self.assertEqual( num_hits_multiplier(W_perm)*4,  nhits(hits_[1], self.user1.username) )
+                        self.assertEqual( num_hits_multiplier(W_perm)*2,  nhits(hits_[2], self.user1.username) )
+            finally:
+                # - Clean up
+                delete_metadata_index(DEFAULT_METADATA_INDEX)
+                delete_metadata_index(INDEX_2)
+
+
+
     def test_indexing_of_odd_chars_and_json_in_metadata__41__43(self):
         with session.make_session_for_existing_admin() as admin_session:
             self.remove_all_jobs_from_delay_queue(admin_session)
@@ -820,6 +946,31 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
         finally:
             for p in collections_to_delete:
                 session.assert_icommand(['irm', '-rf', p],'STDOUT','')
+
+    def test_indexing_with_atomic_acl_ops__81(self):
+        with indexing_plugin__installed(indexing_config = {'minimum_delay_time':'1', 'maximum_delay_time':'9'}):
+            test_coll = self.test_coll_name()
+            INDEX = DEFAULT_METADATA_INDEX + "__81_{:%s.%f}".format(_datetime.now())
+            create_metadata_index (INDEX)
+            try:
+                with session.make_session_for_existing_admin() as admin_session:
+                    admin_session.assert_icommand("imkdir {0}".format(test_coll))
+                    admin_session.assert_icommand("itouch {0}/testobj".format(test_coll))
+                    admin_session.assert_icommand("imeta set -C {0} irods::indexing::index {1}::metadata elasticsearch".format(test_coll, INDEX))
+                    sleep(5)
+                    # hit the apply_atomic_acl api
+                    self.assertIsNotNone (repeat_until (operator.eq, True) (self.delay_queue_is_empty) (admin_session))
+                    admin_session.assert_icommand("""cd ${{HOME}} ;  python3 ~/scripts/irods/test/atomic_acl_ops.py -v {self.venv_dir} """
+                                                  """ '/{0.zone_name}/home/{0.username}'/{test_coll}/testobj {self.user0.username} write """
+                                                  """ {self.user1.username} read """.format(admin_session, **locals()), use_unsafe_shell=True)
+                    # Check new permissions are reflected in the index
+                    self.assertIsNotNone( repeat_until(operator.eq, 1, transform=number_of_hits,
+                                                      ) (search_index_for_userPermissions_user_name) (INDEX, self.user0.username))
+                    self.assertEqual(1, number_of_hits(search_index_for_userPermissions_user_name (INDEX, self.user1.username)))
+            finally:
+                delete_metadata_index (INDEX)
+                with session.make_session_for_existing_admin() as admin_session:
+                    admin_session.assert_icommand("irm -fr {0}".format(test_coll))
 
     def test_indexing_with_atomic_metadata_ops_66(self):
         with indexing_plugin__installed():
