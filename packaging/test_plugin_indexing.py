@@ -31,6 +31,12 @@ try:
     long_type = long # Python 2.x
 except NameError: pass
 
+environment_variable_to_bool = lambda var:(
+        os.environ.get(var,"").lower() not in ("n", "no", "f", "false", "0", ""))
+
+
+Manual_Tests_Enabled = environment_variable_to_bool("MANUALLY_TEST_INDEXING_PLUGIN")
+
 # -----------
 
 # "repeat_until" is a dynamically applied decorator that repeatedly calls the function
@@ -373,10 +379,8 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.book_texts = get_source_books( instance = cls, attr = 'Books_Dir' )
-        cls.venv_dir = install_python3_virtualenv_with_python_irodsclient(PATH='~/py3')
-        #import remote_pdb
-        #remote_pdb.RemotePdb('localhost',8000).set_trace()
-        #pass
+        if Manual_Tests_Enabled:
+            cls.venv_dir = install_python3_virtualenv_with_python_irodsclient(PATH='~/py3')
 
     @classmethod
     def tearDownClass(cls):
@@ -840,10 +844,7 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
             for p in collections_to_delete:
                 session.assert_icommand(['irm', '-rf', p],'STDOUT','')
 
-    @unittest.skip(
-        'This test requires python-irodsclient. Please run this test manually '
-        'in an environment with python-irodsclient installed.'
-    )
+    @unittest.skipIf(not Manual_Tests_Enabled, "Only manual testing is enabled for tests that depend on a Python3 virtual env")
     def test_indexing_with_atomic_metadata_ops_66(self):
         with indexing_plugin__installed():
             test_coll = 'testcoll_66'
