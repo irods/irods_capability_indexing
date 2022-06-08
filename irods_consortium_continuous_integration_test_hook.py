@@ -36,10 +36,12 @@ def get_build_prerequisites_zypper():
 
 def get_build_prerequisites():
     dispatch_map = {
-        'Ubuntu': get_build_prerequisites_apt,
-        'Centos': get_build_prerequisites_yum,
+        'Almalinux': get_build_prerequisites_yum,
         'Centos linux': get_build_prerequisites_yum,
+        'Centos': get_build_prerequisites_yum,
+        'Debian gnu_linux': get_build_prerequisites_apt,
         'Opensuse': get_build_prerequisites_zypper,
+        'Ubuntu': get_build_prerequisites_apt
     }
     try:
         return dispatch_map[irods_python_ci_utilities.get_distribution()]()
@@ -97,7 +99,7 @@ def main():
     if options.do_setup:
         install_build_prerequisites()
 
-        irods_python_ci_utilities.subprocess_get_output(['sudo', '-EH', 'pip', 'install', 'unittest-xml-reporting==1.14.0'])
+        irods_python_ci_utilities.subprocess_get_output(['sudo', '-EH', 'python3', '-m', 'pip', 'install', 'unittest-xml-reporting==1.14.0'])
 
         install_indexing_engine(options.indexing_engine)
 
