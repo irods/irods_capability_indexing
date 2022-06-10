@@ -22,9 +22,16 @@ def get_matching_packages(directory,ext):
 def get_build_prerequisites_all():
     return['gcc', 'swig']
 
+def platform_including_major_revision():
+    return ( irods_python_ci_utilities.get_distribution(),
+             irods_python_ci_utilities.get_distribution_version_major() )
+
 def get_build_prerequisites_apt():
+    jdk_versions = { ('Debian gnu_linux','11'):'11' }
+    jdk_major = jdk_versions.get(platform_including_major_revision(),'8')
     pre_reqs = ['uuid-dev', 'libssl-dev', 'libsasl2-2', 'libsasl2-dev', 'python3-dev']
-    pre_reqs += ['openjdk-8-jre','curl', 'python3-pip']
+    pre_reqs += ['openjdk-{}-jre'.format(jdk_major)]
+    pre_reqs += ['curl', 'python3-pip']
     return get_build_prerequisites_all()+pre_reqs
 
 def get_build_prerequisites_yum():
@@ -54,13 +61,9 @@ class WrongJavaAsDefault (RuntimeError): pass
 def install_build_prerequisites():
     global Java_Home
     irods_python_ci_utilities.install_os_packages(get_build_prerequisites())
-    java_version_check = re.compile('openjdk version[^\d]*1\.8\.',re.MULTILINE)
-    java_version_text = '\n'.join(irods_python_ci_utilities.subprocess_get_output(['/usr/bin/java','-version'])[1:3])
+    # Java 8 or Later should be used, depending on the Elasticsearch version
     java_real_bin = os.path.realpath('/usr/bin/java')
     Java_Home = os.path.sep.join((java_real_bin.split(os.path.sep))[:-2])
-    if not java_version_check.search( java_version_text ):
-        raise WrongJavaAsDefault
-
 
 class IndexerNotImplemented (RuntimeError): pass
 class WrongNumberOfGlobResults (RuntimeError): pass
