@@ -950,7 +950,20 @@ irods::error exec_rule_text(
                 _e.code(),
                 _e.what());
     }
-
+    catch(const std::exception & _e) {
+        rodsLog(LOG_ERROR,"std::exception (%s) in FILE %s LINE %d FUNCTION %s ",
+                            _e.what(),__FILE__,__LINE__,__FUNCTION__);
+        return ERROR(
+                SYS_NOT_SUPPORTED,
+                _e.what());
+    }
+    catch(...) {
+        rodsLog(LOG_ERROR,"Unknown error in FILE %s LINE %d FUNCTION %s ",
+                            __FILE__,__LINE__,__FUNCTION__);
+        return ERROR(
+                SYS_NOT_SUPPORTED,
+                "Unknown error");
+    }
     return SUCCESS();
 } // exec_rule_text
 
@@ -1155,6 +1168,20 @@ irods::error exec_rule_expression(
         return ERROR(
                 _e.code(),
                 _e.what());
+    }
+    catch(const std::exception & _e) {
+        rodsLog(LOG_ERROR,"std::exception (%s) in FILE %s LINE %d FUNCTION %s ",
+                            _e.what(),__FILE__,__LINE__,__FUNCTION__);
+        return ERROR(
+                SYS_NOT_SUPPORTED,
+                _e.what());
+    }
+    catch(...) {
+        rodsLog(LOG_ERROR,"Unknown error in FILE %s LINE %d FUNCTION %s ",
+                            __FILE__,__LINE__,__FUNCTION__);
+        return ERROR(
+                SYS_NOT_SUPPORTED,
+                "Unknown error");
     }
 
     return SUCCESS();
