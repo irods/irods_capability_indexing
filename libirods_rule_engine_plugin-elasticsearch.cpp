@@ -55,7 +55,7 @@ namespace
 
 	using http_response = std::optional<http::response<http::string_body>>;
 	using json = nlohmann::json;
-    using string_t = std::string;
+	using string_t = std::string;
 
 	struct configuration : irods::indexing::configuration
 	{
@@ -107,11 +107,11 @@ namespace
 		}
 	}; // struct configuration
 
-    std::unique_ptr<configuration> config;
-    std::string object_index_policy;
-    std::string object_purge_policy;
-    std::string metadata_index_policy;
-    std::string metadata_purge_policy;
+	std::unique_ptr<configuration> config;
+	std::string object_index_policy;
+	std::string object_purge_policy;
+	std::string metadata_index_policy;
+	std::string metadata_purge_policy;
 
 	auto send_http_request(http::verb _verb, const std::string_view _target, const std::string_view _body = "")
 		-> http_response
@@ -237,115 +237,101 @@ namespace
 		return std::nullopt;
 	} // send_http_request
 
-    std::string generate_id() {
-        using namespace boost::archive::iterators;
-        std::stringstream os;
-        typedef
-            base64_from_binary< // convert binary values to base64 characters
-                transform_width<// retrieve 6 bit integers from a sequence of 8 bit bytes
-                    const char *,
-                    6,
-                    8
-                >
-            >
-            base64_text; // compose all the above operations in to a new iterator
+	std::string generate_id()
+	{
+		using namespace boost::archive::iterators;
+		std::stringstream os;
+		typedef base64_from_binary< // convert binary values to base64 characters
+			transform_width<        // retrieve 6 bit integers from a sequence of 8 bit bytes
+				const char*,
+				6,
+				8>>
+			base64_text; // compose all the above operations in to a new iterator
 
-        boost::uuids::uuid uuid{boost::uuids::random_generator()()};
-        std::string uuid_str = boost::uuids::to_string(uuid);
-        std::copy(
-            base64_text(uuid_str.c_str()),
-            base64_text(uuid_str.c_str() + uuid_str.size()),
-            ostream_iterator<char>(os));
+		boost::uuids::uuid uuid{boost::uuids::random_generator()()};
+		std::string uuid_str = boost::uuids::to_string(uuid);
+		std::copy(
+			base64_text(uuid_str.c_str()), base64_text(uuid_str.c_str() + uuid_str.size()), ostream_iterator<char>(os));
 
-        return os.str();
-    } // generate_id
+		return os.str();
+	} // generate_id
 
-    std::string get_object_index_id(
-        ruleExecInfo_t*    _rei,
-        const std::string& _object_path,
-        bool *iscoll = nullptr
-    ) {
-        boost::filesystem::path p{_object_path};
-        std::string coll_name = p.parent_path().string();
-        std::string data_name = p.filename().string();
-        namespace fs   = irods::experimental::filesystem;
-        namespace fsvr = irods::experimental::filesystem::server;
-        std::string query_str;
-        if (fsvr::is_collection( *_rei->rsComm, fs::path{_object_path} )) {
-            if (iscoll) { *iscoll = true; }
-            query_str = boost::str( boost::format("SELECT COLL_ID WHERE COLL_NAME = '%s'")
-                                        % _object_path );
-        }
-        else {
-            if (iscoll) { *iscoll = false; }
-            query_str = boost::str( boost::format("SELECT DATA_ID WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'")
-                                        % data_name
-                                        % coll_name );
-        }
-        try {
-            irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
-            if(qobj.size() > 0) {
-                return qobj.front()[0];
-            }
-            THROW(
-                CAT_NO_ROWS_FOUND,
-                boost::format("failed to get object id for [%s]")
-                % _object_path);
-        }
-        catch(const irods::exception& _e) {
-            THROW(
-                CAT_NO_ROWS_FOUND,
-                boost::format("failed to get object id for [%s]")
-                % _object_path);
-        }
+	std::string get_object_index_id(ruleExecInfo_t* _rei, const std::string& _object_path, bool* iscoll = nullptr)
+	{
+		boost::filesystem::path p{_object_path};
+		std::string coll_name = p.parent_path().string();
+		std::string data_name = p.filename().string();
+		namespace fs = irods::experimental::filesystem;
+		namespace fsvr = irods::experimental::filesystem::server;
+		std::string query_str;
+		if (fsvr::is_collection(*_rei->rsComm, fs::path{_object_path})) {
+			if (iscoll) {
+				*iscoll = true;
+			}
+			query_str = fmt::format("SELECT COLL_ID WHERE COLL_NAME = '{}'", _object_path);
+		}
+		else {
+			if (iscoll) {
+				*iscoll = false;
+			}
+			query_str = fmt::format("SELECT DATA_ID WHERE COLL_NAME = '{}' AND DATA_NAME = '{}'", coll_name, data_name);
+		}
+		try {
+			irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
+			if (qobj.size() > 0) {
+				return qobj.front()[0];
+			}
+			THROW(CAT_NO_ROWS_FOUND, boost::format("failed to get object id for [%s]") % _object_path);
+		}
+		catch (const irods::exception& _e) {
+			THROW(CAT_NO_ROWS_FOUND, boost::format("failed to get object id for [%s]") % _object_path);
+		}
 
-    } // get_object_index_id
+	} // get_object_index_id
 
-    void get_metadata_for_object_index_id(
-        ruleExecInfo_t*    _rei,
-        std::string _obj_id,
-        bool _is_coll,
-        std::optional<nlohmann::json> & _out
-    )
-    {
-        if (!_out || !_out->is_array()) _out = nlohmann::json::array();
-        auto & avus_out = *_out;
-        const std::string query_str = _is_coll ?
-            fmt::format("SELECT META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS"
-                        " WHERE COLL_ID = '{}' ", _obj_id) :
-            fmt::format("SELECT META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS"
-                        " WHERE DATA_ID = '{}' ", _obj_id);
-            irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
-            for (const auto & row : qobj) {
-                if (row[0] == config->index) continue;
-                avus_out  +=  {  { "attribute", row[0] },
-                                 { "value",     row[1] },
-                                 { "unit",      row[2] }  };
-            }
-    } // get_metadata_for_object_index_id
+	void get_metadata_for_object_index_id(ruleExecInfo_t* _rei,
+	                                      std::string _obj_id,
+	                                      bool _is_coll,
+	                                      std::optional<nlohmann::json>& _out)
+	{
+		if (!_out || !_out->is_array()) {
+			_out = nlohmann::json::array();
+		}
 
-    void update_object_metadata(
-        ruleExecInfo_t*    _rei,
-        const std::string& _object_path,
-        const std::string& _attribute,
-        const std::string& _value,
-        const std::string& _units ) {
-        modAVUMetadataInp_t set_op{
-            .arg0 = "set",
-            .arg1 = "-d",
-            .arg2 = const_cast<char*>(_object_path.c_str()),
-            .arg3 = const_cast<char*>(_attribute.c_str()),
-            .arg4 = const_cast<char*>(_value.c_str()),
-            .arg5 = const_cast<char*>(_units.c_str())};
+		auto& avus_out = *_out;
+		const std::string query_str =
+			_is_coll ? fmt::format("SELECT META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS"
+		                           " WHERE COLL_ID = '{}' ",
+		                           _obj_id)
+					 : fmt::format("SELECT META_DATA_ATTR_NAME, META_DATA_ATTR_VALUE, META_DATA_ATTR_UNITS"
+		                           " WHERE DATA_ID = '{}' ",
+		                           _obj_id);
+		irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
+		for (const auto& row : qobj) {
+			if (row[0] == config->index)
+				continue;
+			avus_out += {{"attribute", row[0]}, {"value", row[1]}, {"unit", row[2]}};
+		}
+	} // get_metadata_for_object_index_id
 
-        auto status = rsModAVUMetadata(_rei->rsComm, &set_op);
-        if(status < 0) {
-            THROW(
-                status,
-                boost::format("failed to update object [%s] metadata")
-                % _object_path);
-        }
-    } // update_object_metadata
+	void update_object_metadata(ruleExecInfo_t* _rei,
+	                            const std::string& _object_path,
+	                            const std::string& _attribute,
+	                            const std::string& _value,
+	                            const std::string& _units)
+	{
+		modAVUMetadataInp_t set_op{.arg0 = "set",
+		                           .arg1 = "-d",
+		                           .arg2 = const_cast<char*>(_object_path.c_str()),
+		                           .arg3 = const_cast<char*>(_attribute.c_str()),
+		                           .arg4 = const_cast<char*>(_value.c_str()),
+		                           .arg5 = const_cast<char*>(_units.c_str())};
+
+		auto status = rsModAVUMetadata(_rei->rsComm, &set_op);
+		if (status < 0) {
+			THROW(status, boost::format("failed to update object [%s] metadata") % _object_path);
+		}
+	} // update_object_metadata
 
 	void invoke_indexing_event_full_text(ruleExecInfo_t* _rei,
 	                                     const std::string& _object_path,
@@ -496,25 +482,22 @@ namespace
 		}
 	} // invoke_purge_event_full_text
 
-    std::string get_metadata_index_id(
-        const std::string& _index_id,
-        const std::string& _attribute,
-        const std::string& _value,
-        const std::string& _units) {
+	std::string get_metadata_index_id(const std::string& _index_id,
+	                                  const std::string& _attribute,
+	                                  const std::string& _value,
+	                                  const std::string& _units)
+	{
+		std::string str = _attribute + _value + _units;
+		irods::Hasher hasher;
+		irods::getHasher(irods::MD5_NAME, hasher);
+		hasher.update(str);
 
-        std::string str = _attribute +
-                          _value +
-                          _units;
-        irods::Hasher hasher;
-        irods::getHasher( irods::MD5_NAME, hasher );
-        hasher.update(str);
+		std::string digest;
+		hasher.digest(digest);
 
-        std::string digest;
-        hasher.digest(digest);
+		return _index_id + irods::indexing::indexer_separator + digest;
 
-        return _index_id + irods::indexing::indexer_separator + digest;
-
-    } // get_metadata_index_id
+	} // get_metadata_index_id
 
 	void invoke_indexing_event_metadata(ruleExecInfo_t* _rei,
 	                                    const std::string& _object_path,
@@ -644,10 +627,8 @@ namespace
 		}
 	} // invoke_purge_event_metadata
 
-	irods::error start(
-		irods::default_re_ctx&,
-		const std::string& _instance_name ) {
-
+	irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
+	{
 		RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
 
 		try {
@@ -657,43 +638,32 @@ namespace
 			return e;
 		}
 
-		object_index_policy = irods::indexing::policy::compose_policy_name(
-								   irods::indexing::policy::object::index,
-								   "elasticsearch");
-		object_purge_policy = irods::indexing::policy::compose_policy_name(
-								   irods::indexing::policy::object::purge,
-								   "elasticsearch");
-		metadata_index_policy = irods::indexing::policy::compose_policy_name(
-								   irods::indexing::policy::metadata::index,
-								   "elasticsearch");
-		metadata_purge_policy = irods::indexing::policy::compose_policy_name(
-								   irods::indexing::policy::metadata::purge,
-								   "elasticsearch");
+		object_index_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::object::index, "elasticsearch");
+		object_purge_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::object::purge, "elasticsearch");
+		metadata_index_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::index, "elasticsearch");
+		metadata_purge_policy =
+			irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::purge, "elasticsearch");
 
 		return SUCCESS();
 	}
 
-	irods::error stop(
-		irods::default_re_ctx&,
-		const std::string& ) {
+	irods::error stop(irods::default_re_ctx&, const std::string&)
+	{
 		return SUCCESS();
 	}
 
-	irods::error rule_exists(
-		irods::default_re_ctx&,
-		const std::string& _rn,
-		bool&              _ret) {
-		_ret = "irods_policy_recursive_rm_object_by_path" == _rn ||
-			   object_index_policy   == _rn ||
-			   object_purge_policy   == _rn ||
-			   metadata_index_policy == _rn ||
-			   metadata_purge_policy == _rn;
+	irods::error rule_exists(irods::default_re_ctx&, const std::string& _rn, bool& _ret)
+	{
+		_ret = "irods_policy_recursive_rm_object_by_path" == _rn || object_index_policy == _rn ||
+		       object_purge_policy == _rn || metadata_index_policy == _rn || metadata_purge_policy == _rn;
 		return SUCCESS();
 	}
 
-	irods::error list_rules(
-		irods::default_re_ctx&,
-		std::vector<std::string>& _rules) {
+	irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>& _rules)
+	{
 		_rules.push_back(object_index_policy);
 		_rules.push_back(object_purge_policy);
 		_rules.push_back(metadata_index_policy);
@@ -701,280 +671,193 @@ namespace
 		return SUCCESS();
 	}
 
-	irods::error exec_rule(
-		irods::default_re_ctx&,
-		const std::string&     _rn,
-		std::list<boost::any>& _args,
-		irods::callback        _eff_hdlr) {
+	irods::error exec_rule(irods::default_re_ctx&,
+	                       const std::string& _rn,
+	                       std::list<boost::any>& _args,
+	                       irods::callback _eff_hdlr)
+	{
 		ruleExecInfo_t* rei{};
 		const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
 
-		if(!err.ok()) {
+		if (!err.ok()) {
 			return err;
 		}
 
 		using nlohmann::json;
 		try {
-			if(_rn == object_index_policy) {
+			if (_rn == object_index_policy) {
 				auto it = _args.begin();
-				const std::string object_path{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string source_resource{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string index_name{ boost::any_cast<std::string>(*it) }; ++it;
+				const std::string object_path{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string source_resource{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string index_name{boost::any_cast<std::string>(*it)};
+				++it;
 
-				invoke_indexing_event_full_text(
-					rei,
-					object_path,
-					source_resource,
-					index_name);
+				invoke_indexing_event_full_text(rei, object_path, source_resource, index_name);
 			}
-			else if(_rn == object_purge_policy) {
+			else if (_rn == object_purge_policy) {
 				auto it = _args.begin();
-				const std::string object_path{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string source_resource{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string index_name{ boost::any_cast<std::string>(*it) }; ++it;
+				const std::string object_path{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string source_resource{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string index_name{boost::any_cast<std::string>(*it)};
+				++it;
 
-				invoke_purge_event_full_text(
-					rei,
-					object_path,
-					source_resource,
-					index_name);
+				invoke_purge_event_full_text(rei, object_path, source_resource, index_name);
 			}
-			else if(_rn == metadata_index_policy || _rn == metadata_purge_policy) {
-
+			else if (_rn == metadata_index_policy || _rn == metadata_purge_policy) {
 				auto it = _args.begin();
-				const std::string object_path{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string attribute{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string value{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string unit{ boost::any_cast<std::string>(*it) }; ++it;
-				const std::string index_name{ boost::any_cast<std::string>(*it) }; ++it;
+				const std::string object_path{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string attribute{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string value{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string unit{boost::any_cast<std::string>(*it)};
+				++it;
+				const std::string index_name{boost::any_cast<std::string>(*it)};
+				++it;
 
 				std::string obj_meta_str = "{}";
 
 				if (it != _args.end()) {
-					obj_meta_str =  boost::any_cast<std::string>(*it++);
+					obj_meta_str = boost::any_cast<std::string>(*it++);
 				}
 
 				json obj_meta = nlohmann::json::parse(obj_meta_str);
 
-				if (_rn == metadata_purge_policy && attribute.empty()) {  //  purge with AVU by name?
-
-					invoke_purge_event_metadata(         //  delete the indexed entry
-						rei,
-						object_path,
-						attribute,
-						value,
-						unit,
-						index_name);
+				// purge with AVU by name?
+				if (_rn == metadata_purge_policy && attribute.empty()) {
+					// delete the indexed entry
+					invoke_purge_event_metadata(rei, object_path, attribute, value, unit, index_name);
 				}
 				else {
-					invoke_indexing_event_metadata(      // update the indexed entry
-						rei,
-						object_path,
-						attribute,
-						value,
-						unit,
-						index_name,
-						obj_meta);
+					// update the indexed entry
+					invoke_indexing_event_metadata(rei, object_path, attribute, value, unit, index_name, obj_meta);
+				}
+			}
+			else if (_rn == "irods_policy_recursive_rm_object_by_path") {
+				auto it = _args.begin();
+				const std::string the_path{boost::any_cast<std::string>(*it)};
+				std::advance(it, 2);
+				const json recurse_info = json::parse(boost::any_cast<std::string&>(*it));
+
+				const auto escaped_path = [p = the_path]() mutable {
+					boost::replace_all(p, "\\", "\\\\");
+					boost::replace_all(p, "?", "\\?");
+					boost::replace_all(p, "*", "\\*");
+					return p;
+				}();
+
+				std::string JtopLevel = json{{"query", {{"match", {{"absolutePath", escaped_path}}}}}}.dump();
+				std::string JsubObject;
+
+				try {
+					if (recurse_info.at("is_collection").get<bool>()) {
+						JsubObject =
+							json{{"query", {{"wildcard", {{"absolutePath", {{"value", escaped_path + "/*"}}}}}}}}
+								.dump();
+					}
+				}
+				catch (const json::exception& e) {
+					return ERROR(SYS_LIBRARY_ERROR, e.what());
 				}
 
-			}
-			else if(_rn == "irods_policy_recursive_rm_object_by_path") {
-				auto it = _args.begin();
-					const std::string the_path{boost::any_cast<std::string>(*it)};
-					std::advance(it, 2);
-					const json recurse_info = json::parse(boost::any_cast<std::string&>(*it));
+				try {
+					for (const auto& e : recurse_info.at("indices")) {
+						const auto& index_name = e.get_ref<const std::string&>();
 
-					const auto escaped_path = [p = the_path]() mutable {
-						boost::replace_all(p, "\\", "\\\\");
-						boost::replace_all(p, "?", "\\?");
-						boost::replace_all(p, "*", "\\*");
-						return p;
-					}();
+						for (const std::string& query_input : {JtopLevel, JsubObject}) {
+							if (query_input.empty()) {
+								continue;
+							}
 
-					std::string JtopLevel = json{{"query", {{"match", {{"absolutePath", escaped_path}}}}}}.dump();
-					std::string JsubObject;
+							const auto response = send_http_request(
+								http::verb::post, fmt::format("{}/_delete_by_query", index_name), query_input);
 
-					try {
-						if (recurse_info.at("is_collection").get<bool>()) {
-							JsubObject =
-								json{{"query", {{"wildcard", {{"absolutePath", {{"value", escaped_path + "/*"}}}}}}}}
-									.dump();
-						}
-					}
-					catch (const json::exception& e) {
-						return ERROR(SYS_LIBRARY_ERROR, e.what());
-					}
+							if (!response.has_value()) {
+								rodsLog(LOG_ERROR,
+								        fmt::format("{}: No response from elasticsearch host.", __func__).c_str());
+								continue;
+							}
 
-					try {
-						for (const auto& e : recurse_info.at("indices")) {
-							const auto& index_name = e.get_ref<const std::string&>();
-
-							for (const std::string& query_input : {JtopLevel, JsubObject}) {
-								if (query_input.empty()) {
-									continue;
-								}
-
-								const auto response = send_http_request(
-									http::verb::post, fmt::format("{}/_delete_by_query", index_name), query_input);
-
-								if (!response.has_value()) {
-									rodsLog(LOG_ERROR,
-											fmt::format("{}: No response from elasticsearch host.", __func__).c_str());
-									continue;
-								}
-
-								if (response->result_int() != 200) {
-									rodsLog(
-										LOG_WARNING,
-										fmt::format(
-											"{}: _delete_by_query failed [rule=[{}], path=[{}]", __func__, _rn, the_path)
-											.c_str());
-								}
+							if (response->result_int() != 200) {
+								rodsLog(
+									LOG_WARNING,
+									fmt::format(
+										"{}: _delete_by_query failed [rule=[{}], path=[{}]", __func__, _rn, the_path)
+										.c_str());
 							}
 						}
 					}
-					catch (const nlohmann::json::parse_error& e) {
-						rodsLog(LOG_ERROR, fmt::format("JSON parse exception : [{}]", e.what()).c_str());
-					}
+				}
+				catch (const nlohmann::json::parse_error& e) {
+					rodsLog(LOG_ERROR, fmt::format("JSON parse exception : [{}]", e.what()).c_str());
+				}
 			} // "irods_policy_recursive_rm_object_by_path"
 			else {
-				return ERROR(
-						SYS_NOT_SUPPORTED,
-						_rn);
+				return ERROR(SYS_NOT_SUPPORTED, _rn);
 			}
 		}
-		catch(const std::invalid_argument& _e) {
-			irods::indexing::exception_to_rerror(
-				SYS_NOT_SUPPORTED,
-				_e.what(),
-				rei->rsComm->rError);
-			return ERROR(
-					   SYS_NOT_SUPPORTED,
-					   _e.what());
+		catch (const std::invalid_argument& _e) {
+			irods::indexing::exception_to_rerror(SYS_NOT_SUPPORTED, _e.what(), rei->rsComm->rError);
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
 		}
-		catch(const boost::bad_any_cast& _e) {
-			irods::indexing::exception_to_rerror(
-				INVALID_ANY_CAST,
-				_e.what(),
-				rei->rsComm->rError);
-			return ERROR(
-					   SYS_NOT_SUPPORTED,
-					   _e.what());
+		catch (const boost::bad_any_cast& _e) {
+			irods::indexing::exception_to_rerror(INVALID_ANY_CAST, _e.what(), rei->rsComm->rError);
+			return ERROR(SYS_NOT_SUPPORTED, _e.what());
 		}
-		catch(const irods::exception& _e) {
-			irods::indexing::exception_to_rerror(
-				_e,
-				rei->rsComm->rError);
+		catch (const irods::exception& _e) {
+			irods::indexing::exception_to_rerror(_e, rei->rsComm->rError);
 			return irods::error(_e);
 		}
 
 		return err;
-
 	} // exec_rule
 
-	irods::error exec_rule_text(
-		irods::default_re_ctx&,
-		const std::string&,
-		msParamArray_t*,
-		const std::string&,
-		irods::callback ) {
-		return ERROR(
-				RULE_ENGINE_CONTINUE,
-				"exec_rule_text is not supported");
+	irods::error exec_rule_text(irods::default_re_ctx&,
+	                            const std::string&,
+	                            msParamArray_t*,
+	                            const std::string&,
+	                            irods::callback)
+	{
+		return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_text is not supported");
 	} // exec_rule_text
 
-	irods::error exec_rule_expression(
-		irods::default_re_ctx&,
-		const std::string&,
-		msParamArray_t*,
-		irods::callback) {
-		return ERROR(
-				RULE_ENGINE_CONTINUE,
-				"exec_rule_expression is not supported");
+	irods::error exec_rule_expression(irods::default_re_ctx&, const std::string&, msParamArray_t*, irods::callback)
+	{
+		return ERROR(RULE_ENGINE_CONTINUE, "exec_rule_expression is not supported");
 	} // exec_rule_expression
 } // namespace
 
-extern "C"
-irods::pluggable_rule_engine<irods::default_re_ctx>* plugin_factory(
-    const std::string& _inst_name,
-    const std::string& _context ) {
-    irods::pluggable_rule_engine<irods::default_re_ctx>* re = 
-        new irods::pluggable_rule_engine<irods::default_re_ctx>(
-                _inst_name,
-                _context);
-    re->add_operation<
-        irods::default_re_ctx&,
-        const std::string&>(
-            "start",
-            std::function<
-                irods::error(
-                    irods::default_re_ctx&,
-                    const std::string&)>(start));
-    re->add_operation<
-        irods::default_re_ctx&,
-        const std::string&>(
-            "stop",
-            std::function<
-                irods::error(
-                    irods::default_re_ctx&,
-                    const std::string&)>(stop));
-    re->add_operation<
-        irods::default_re_ctx&,
-        const std::string&,
-        bool&>(
-            "rule_exists",
-            std::function<
-                irods::error(
-                    irods::default_re_ctx&,
-                    const std::string&,
-                    bool&)>(rule_exists));
-    re->add_operation<
-        irods::default_re_ctx&,
-        std::vector<std::string>&>(
-            "list_rules",
-            std::function<
-                irods::error(
-                    irods::default_re_ctx&,
-                    std::vector<std::string>&)>(list_rules));
-    re->add_operation<
-        irods::default_re_ctx&,
-        const std::string&,
-        std::list<boost::any>&,
-        irods::callback>(
-            "exec_rule",
-            std::function<
-                irods::error(
-                    irods::default_re_ctx&,
-                    const std::string&,
-                    std::list<boost::any>&,
-                    irods::callback)>(exec_rule));
-    re->add_operation<
-        irods::default_re_ctx&,
-        const std::string&,
-        msParamArray_t*,
-        const std::string&,
-        irods::callback>(
-            "exec_rule_text",
-            std::function<
-                irods::error(
-                    irods::default_re_ctx&,
-                    const std::string&,
-                    msParamArray_t*,
-                    const std::string&,
-                    irods::callback)>(exec_rule_text));
+extern "C" irods::pluggable_rule_engine<irods::default_re_ctx>* plugin_factory(const std::string& _inst_name,
+                                                                               const std::string& _context)
+{
+	irods::pluggable_rule_engine<irods::default_re_ctx>* re =
+		new irods::pluggable_rule_engine<irods::default_re_ctx>(_inst_name, _context);
+	re->add_operation<irods::default_re_ctx&, const std::string&>(
+		"start", std::function<irods::error(irods::default_re_ctx&, const std::string&)>(start));
+	re->add_operation<irods::default_re_ctx&, const std::string&>(
+		"stop", std::function<irods::error(irods::default_re_ctx&, const std::string&)>(stop));
+	re->add_operation<irods::default_re_ctx&, const std::string&, bool&>(
+		"rule_exists", std::function<irods::error(irods::default_re_ctx&, const std::string&, bool&)>(rule_exists));
+	re->add_operation<irods::default_re_ctx&, std::vector<std::string>&>(
+		"list_rules", std::function<irods::error(irods::default_re_ctx&, std::vector<std::string>&)>(list_rules));
+	re->add_operation<irods::default_re_ctx&, const std::string&, std::list<boost::any>&, irods::callback>(
+		"exec_rule",
+		std::function<irods::error(
+			irods::default_re_ctx&, const std::string&, std::list<boost::any>&, irods::callback)>(exec_rule));
+	re->add_operation<irods::default_re_ctx&, const std::string&, msParamArray_t*, const std::string&, irods::callback>(
+		"exec_rule_text",
+		std::function<irods::error(
+			irods::default_re_ctx&, const std::string&, msParamArray_t*, const std::string&, irods::callback)>(
+			exec_rule_text));
 
-    re->add_operation<
-        irods::default_re_ctx&,
-        const std::string&,
-        msParamArray_t*,
-        irods::callback>(
-            "exec_rule_expression",
-            std::function<
-                irods::error(
-                    irods::default_re_ctx&,
-                    const std::string&,
-                    msParamArray_t*,
-                    irods::callback)>(exec_rule_expression));
-    return re;
-
+	re->add_operation<irods::default_re_ctx&, const std::string&, msParamArray_t*, irods::callback>(
+		"exec_rule_expression",
+		std::function<irods::error(irods::default_re_ctx&, const std::string&, msParamArray_t*, irods::callback)>(
+			exec_rule_expression));
+	return re;
 } // plugin_factory

@@ -1,5 +1,5 @@
-#ifndef CPP_JSON_KW__HPP
-#define CPP_JSON_KW__HPP
+#ifndef IRODS_CAPABILITY_INDEXING_CPP_JSON_KW_HPP
+#define IRODS_CAPABILITY_INDEXING_CPP_JSON_KW_HPP
 
 #include <irods/rodsLog.h>
 
@@ -9,29 +9,31 @@
 #include <stdexcept>
 #include <string>
 
-using nlohmann::json;
-
 template <typename T>
-struct mapped_json_value {bool success ; std::optional<T> value;};
+struct mapped_json_value
+{
+	bool success;
+	std::optional<T> value;
+};
 
 // Extract a value by T (the type) and key (a string lookup key from a JSON object)
 // The returned values are, in order:
-//   -  a boolean (success flag) 
+//   -  a boolean (success flag)
 //   -  a std::optional containing the retrieved value on success.
 
 template <typename T>
-auto kws_get(const nlohmann::json &j, const std::string & key) -> mapped_json_value<T>
+auto kws_get(const nlohmann::json& j, const std::string& key) -> mapped_json_value<T>
 {
-   if (auto iter = j.find(key); iter != j.end()) {
-       try {
-           return { true, iter->get<T>() };
-       }
-       catch (std::exception & e) {
-		   rodsLog(LOG_ERROR, "%s: bad conversion: %s", __func__, e.what());
-           throw;
-       }
-   }
-   return {};
+	if (auto iter = j.find(key); iter != j.end()) {
+		try {
+			return {true, iter->get<T>()};
+		}
+		catch (std::exception& e) {
+			rodsLog(LOG_ERROR, "%s: bad conversion: %s", __func__, e.what());
+			throw;
+		}
+	}
+	return {};
 }
 
 /* // SAMPLE USAGE
@@ -57,4 +59,4 @@ int main (int argc, char** argv)
  *
  */
 
-#endif // CPP_JSON_KW__HPP
+#endif // IRODS_CAPABILITY_INDEXING_CPP_JSON_KW_HPP
