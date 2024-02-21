@@ -48,6 +48,7 @@ def get_build_prerequisites():
         'Centos': get_build_prerequisites_yum,
         'Debian gnu_linux': get_build_prerequisites_apt,
         'Opensuse': get_build_prerequisites_zypper,
+        'Rocky linux': get_build_prerequisites_yum,
         'Ubuntu': get_build_prerequisites_apt
     }
     try:
