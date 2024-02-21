@@ -27,31 +27,24 @@ By default, should no resource be tagged it is assumed that all resources are av
 There are currently three rule engine plugins to configure for the indexing capability which should be added to the `"rule_engines"` section of `/etc/irods/server_config.json`:
 
 ```
-    "rule_engines": [
-            {
-                "instance_name": "irods_rule_engine_plugin-indexing-instance",
-                "plugin_name": "irods_rule_engine_plugin-indexing",
-                "plugin_specific_configuration": {
-                }
-            },
-            {
-                "instance_name": "irods_rule_engine_plugin-elasticsearch-instance",
-                "plugin_name": "irods_rule_engine_plugin-elasticsearch",
-                "plugin_specific_configuration": {
-                    "hosts" : ["http://localhost:9200/"],
-                    "bulk_count" : 100,
-                    "read_size" : 4194304
-                }
-            },
-            {
-                "instance_name": "irods_rule_engine_plugin-document_type-instance",
-                "plugin_name": "irods_rule_engine_plugin-document_type",
-                "plugin_specific_configuration": {
-                }
-            },
-        ]
+"rule_engines": [
+    {
+        "instance_name": "irods_rule_engine_plugin-indexing-instance",
+        "plugin_name": "irods_rule_engine_plugin-indexing",
+        "plugin_specific_configuration": {}
+    },
+    {
+        "instance_name": "irods_rule_engine_plugin-elasticsearch-instance",
+        "plugin_name": "irods_rule_engine_plugin-elasticsearch",
+        "plugin_specific_configuration": {
+            "hosts": ["http://localhost:9200/"],
+            "bulk_count": 100,
+            "read_size": 4194304
+        }
+    }
+]
 ```
-The first is the main indexing rule engine plugin, the second is the plugin responsible for implementing the policy for the indexing technology, and the third is responsible for implementing the document type introspection.  Currently the default imply returns `text` as the document type.  This policy can be overridden to call out to services like Tika for a better introspection of the data.
+The first is the main indexing rule engine plugin and the second is the plugin responsible for implementing the policy for the indexing technology.
 
 Within each plugin configuration stanza, the "plugin_specific_configuration" object may contain a number of key-value pairs.  The following pairs are currently applicable for the purpose of setting the indexing capability's operating parameters:
 
@@ -77,12 +70,6 @@ irods_policy_indexing_object_index_<technology>
 irods_policy_indexing_object_purge_<technology>
 irods_policy_indexing_metadata_index_<technology>
 irods_policy_indexing_metadata_purge_<technology>
-```
-
-### Document Type Policy
-
-```
-irods_policy_indexing_document_type_<technology>
 ```
 
 ### Plugin Testing

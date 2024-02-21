@@ -222,23 +222,6 @@ namespace {
 		return std::nullopt;
 	} // send_http_request
 
-    void apply_document_type_policy(
-        ruleExecInfo_t*    _rei,
-        const std::string& _object_path,
-        const std::string& _source_resource,
-        std::string*       _document_type) {
-
-        std::list<boost::any> args;
-        args.push_back(boost::any(_object_path));
-        args.push_back(boost::any(_source_resource));
-        args.push_back(boost::any(_document_type));
-        std::string policy_name = irods::indexing::policy::compose_policy_name(
-                                  irods::indexing::policy::prefix,
-                                  "document_type_elastic");
-        irods::indexing::invoke_policy(_rei, policy_name, args);
-
-    } // apply_document_type_policy
-
     std::string generate_id() {
         using namespace boost::archive::iterators;
         std::stringstream os;

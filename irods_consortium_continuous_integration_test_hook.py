@@ -12,7 +12,7 @@ def Indexing_PackageName_Regex( package_ext, technology = 'elasticsearch' ):
     tech = re.escape(technology)
     ext = re.escape(package_ext)
     return re.compile(
-        r'irods-rule-engine-plugin-(document-type|{tech}|indexing)[-_][0-9].*\.{ext}$'.format(**locals())
+        r'irods-rule-engine-plugin-({tech}|indexing)[-_][0-9].*\.{ext}$'.format(**locals())
     )
 
 def get_matching_packages(directory,ext):

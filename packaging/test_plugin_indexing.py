@@ -193,12 +193,6 @@ def indexing_plugin__installed(indexing_config=(), server_env_options={}):
                     "read_size" : 4194304,
                     "es_version" : ES_VERSION
                 }
-            },
-            {
-                "instance_name": "irods_rule_engine_plugin-document_type-instance",
-                "plugin_name": "irods_rule_engine_plugin-document_type",
-                "plugin_specific_configuration": {
-                }
             }
         ]
         irods_config.commit(irods_config.server_config, irods_config.server_config_path)
