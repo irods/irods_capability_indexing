@@ -166,9 +166,7 @@ def get_source_books ( prefix_ = 'Books_', instance = None, attr = None ):
 
     return retvalue
 
-ES_VERSION = '7.x'
-def es7_exactly (): return '8.' > ES_VERSION >= '7.'
-def es7_or_later(): return ES_VERSION >= '7.'
+ES_VERSION = '7.x' # TODO We probably don't need this anymore.
 
 @contextlib.contextmanager
 def indexing_plugin__installed(indexing_config=(), server_env_options={}):
@@ -245,23 +243,21 @@ def install_python3_virtualenv_with_python_irodsclient(PATH='~/py3',preTestPRCIn
 # Assuming use for metadata style of index only
 
 def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEARCH_PORT):
-    maptype = "" if es7_or_later() else "/text"
-    track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}{maptype}/_search?pretty=true{track_num_hits_as_int} -d '
+        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath", "metadataEntries"],
             "query" : {{
                 "nested": {{
-                  "path": "metadataEntries",
-                  "query": {{
-                    "bool": {{
-                      "must": [
-                        {{ "match": {{ "metadataEntries.attribute": "{attr_name}" }} }}
-                      ]
+                    "path": "metadataEntries",
+                    "query": {{
+                        "bool": {{
+                            "must": [
+                                {{ "match": {{ "metadataEntries.attribute": "{attr_name}" }} }}
+                            ]
+                        }}
                     }}
-                  }}
                 }}
             }}
         }}' """).format(**locals()))
@@ -273,9 +269,8 @@ def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEA
 
 def search_index_for_object_path(index_name, path_component, extra_source_fields="", port = ELASTICSEARCH_PORT):
     path_component_matcher = ("*/" + path_component + ("/*" if not path_component.endswith("$") else "")).rstrip("$")
-    track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true{track_num_hits_as_int} -d '
+        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath" {extra_source_fields} ],
@@ -294,9 +289,8 @@ def search_index_for_object_path(index_name, path_component, extra_source_fields
 # Assuming use for fulltext style of index only
 
 def search_index_for_All_object_paths(index_name, port = ELASTICSEARCH_PORT):
-    track_num_hits_as_int = "&track_total_hits=true&rest_total_hits_as_int=true" if es7_exactly() else ""
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' HTTP://localhost:{port}/{index_name}/text/_search?pretty=true{track_num_hits_as_int} -d '
+        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath", "data"],
@@ -308,60 +302,45 @@ def search_index_for_All_object_paths(index_name, port = ELASTICSEARCH_PORT):
     return out
 
 def create_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
-    OPTION = "?include_type_name" if es7_or_later()  else "" #--> ES7 allows 'text' mapping but requires hint
-    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
-    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_mapping/text{OPTION} ".format(**locals()) +
-                        """ -d '{ "properties" : { "absolutePath" : { "type" : "keyword" }, "data" : { "type" : "text" } } }'""")
+    mapping = json.dumps({
+        "mappings": {
+            "properties": {
+                "absolutePath": {"type": "keyword"},
+                "data": {"type": "text"}
+            }
+        }
+    })
+    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name} -d'{mapping}'".format(**locals()))
     return index_name
 
 def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEARCH_PORT):
-    OPTION = "" if es7_or_later() else "/text"               #--> switch away from 'text' mapping if using >= ES7
-    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
-    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_mapping{OPTION} ".format(**locals()) +
-                        """ -d '{ "properties" : {
-                                "url": {
-                                        "type": "text"
-                                },
-                                "zoneName": {
-                                        "type": "keyword"
-                                },
-                                "absolutePath": {
-                                        "type": "keyword"
-                                },
-                                "fileName": {
-                                        "type": "text"
-                                },
-                                "parentPath": {
-                                        "type": "text"
-                                },
-                                "isFile": {
-                                        "type": "boolean"
-                                },
-                                "dataSize": {
-                                        "type": "long"
-                                },
-                                "mimeType": {
-                                        "type": "keyword"
-                                },
-                                "lastModifiedDate": {
-                                        "type": "date",
-                                        "format": "epoch_second"
-                                },
-                                "metadataEntries": {
-                                        "type": "nested",
-                                        "properties": {
-                                                "attribute": {
-                                                        "type": "keyword"
-                                                },
-                                                "value": {
-                                                        "type": "text"
-                                                },
-                                                "unit": {
-                                                        "type": "keyword"
-                                                }
-                                        }
-                                }
-                            }}' """)
+    mapping = json.dumps({
+        "mappings": {
+            "properties": {
+                "url": {"type": "text"},
+                "zoneName": {"type": "keyword"},
+                "absolutePath": {"type": "keyword"},
+                "fileName": {"type": "text"},
+                "parentPath": {"type": "text"},
+                "isFile": {"type": "boolean"},
+                "dataSize": {"type": "long"},
+                "mimeType": {"type": "keyword"},
+                "lastModifiedDate": {
+                    "type": "date",
+                    "format": "epoch_second"
+                },
+                "metadataEntries": {
+                    "type": "nested",
+                    "properties": {
+                        "attribute": {"type": "keyword"},
+                        "value": {"type": "text"},
+                        "unit": {"type": "keyword"}
+                    }
+                }
+            }
+        }
+    })
+    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name} -d'{mapping}'".format(**locals()))
     return index_name
 
 def delete_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
