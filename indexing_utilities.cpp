@@ -639,13 +639,13 @@ namespace irods {
 
             using json = nlohmann::json;
 
-            const auto & [_ID_bool, _obj_optional_ID] = kws_get<std::string>(_extra_options, "_obj_optional_ID");
-            const auto & [_tag_bool,  job_category_tag] =  kws_get<std::string>(_extra_options, "job_category_tag");
+            const auto& [id_bool, obj_optional_id] = kws_get<std::string>(_extra_options, "_obj_optional_ID");
+            const auto& [tag_bool, job_category_tag] = kws_get<std::string>(_extra_options, "job_category_tag");
 
             json rule_obj;
             rule_obj["rule-engine-operation"]     = _event;
             rule_obj["rule-engine-instance-name"] = config_.instance_name_;
-            rule_obj["object-path"]               = _ID_bool && ! (*_obj_optional_ID).empty() ? *_obj_optional_ID : _object_path;
+            rule_obj["object-path"]               = id_bool && ! (*obj_optional_id).empty() ? *obj_optional_id : _object_path;
             rule_obj["user-name"]                 = _user_name;
             rule_obj["indexer"]                   = _indexer;
             rule_obj["index-name"]                = _index_name;
@@ -654,7 +654,7 @@ namespace irods {
             rule_obj["attribute"]                 = _attribute;
             rule_obj["value"]                     = _value;
             rule_obj["units"]                     = _units;
-            if (_tag_bool && job_category_tag) {
+            if (tag_bool && job_category_tag) {
                 rule_obj["job-category-tag"] = *job_category_tag;
             }
 
