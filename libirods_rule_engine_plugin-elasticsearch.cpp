@@ -382,7 +382,7 @@ namespace
 					if (!res.has_value()) {
 						rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
 					}
-					else {
+					else if (res->result_int() / 100 != 2) {
 						rodsLog(LOG_ERROR,
 						        "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]",
 						        __func__,
@@ -401,7 +401,7 @@ namespace
 				if (!res.has_value()) {
 					rodsLog(LOG_ERROR, "%s: No response from elasticsearch host.", __func__);
 				}
-				else {
+				else if (res->result_int() / 100 != 2) {
 					rodsLog(LOG_ERROR,
 					        "%s: Error sending request to elasticsearch host. [http_status_code=[%d]]",
 					        __func__,
