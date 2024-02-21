@@ -1,15 +1,15 @@
-
-
 #ifndef INDEXING_UTILITIES_HPP
 #define INDEXING_UTILITIES_HPP
 
-#include <list>
-#include <boost/any.hpp>
-#include <string>
-
-#include <nlohmann/json.hpp>
-#include <irods/rcMisc.h>
 #include "configuration.hpp"
+
+#include <irods/irods_re_structs.hpp>
+#include <irods/rcMisc.h>
+
+#include <boost/any.hpp>
+#include <nlohmann/json.hpp>
+
+#include <string>
 
 namespace irods {
     namespace indexing {
