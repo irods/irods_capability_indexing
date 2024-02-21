@@ -1,42 +1,48 @@
-
-#include <irods/irods_server_properties.hpp>
-#include <irods/irods_re_plugin.hpp>
-#include "utilities.hpp"
 #include "indexing_utilities.hpp"
 
-#define IRODS_METADATA_ENABLE_SERVER_SIDE_API
-#define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#include "cpp_json_kw.hpp"
+#include "utilities.hpp"
 
-#include <irods/metadata.hpp>
 #include <irods/irods_at_scope_exit.hpp>
-
-#include <irods/irods_query.hpp>
+#include <irods/irods_re_plugin.hpp>
+#include <irods/irods_server_properties.hpp>
 #include <irods/irods_virtual_path.hpp>
-
+#include <irods/rsCloseCollection.hpp>
 #include <irods/rsExecMyRule.hpp>
+#include <irods/rsModAVUMetadata.hpp>
 #include <irods/rsOpenCollection.hpp>
 #include <irods/rsReadCollection.hpp>
-#include <irods/rsCloseCollection.hpp>
-#include <irods/rsModAVUMetadata.hpp>
 
-#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#ifndef IRODS_METADATA_ENABLE_SERVER_SIDE_API
+#  define IRODS_METADATA_ENABLE_SERVER_SIDE_API
+#endif
+#include <irods/metadata.hpp>
+
+#ifndef IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#  define IRODS_QUERY_ENABLE_SERVER_SIDE_API
+#endif
+#include <irods/irods_query.hpp>
+
+#ifndef IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#  define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#endif
 #include <irods/filesystem.hpp>
 
-#include <boost/any.hpp>
-#include <boost/regex.hpp>
-#include <boost/exception/all.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/any.hpp>
+#include <boost/exception/all.hpp>
 #include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
-#include <random>
-#include <functional>
-#include <limits>
-#include <unistd.h>
+#include <boost/regex.hpp>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
-#include "cpp_json_kw.hpp"
 
+#include <unistd.h>
+
+#include <functional>
+#include <limits>
+#include <random>
 
 using namespace std::string_literals;
 
