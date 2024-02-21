@@ -792,16 +792,22 @@ namespace {
 
 } // namespace
 
+irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
+{
+	RuleExistsHelper::Instance()->registerRuleRegex("pep_api_.*");
 
-irods::error start(
-    irods::default_re_ctx&,
-    const std::string& _instance_name ) {
-    RuleExistsHelper::Instance()->registerRuleRegex("pep_api_.*");
-    config = std::make_unique<irods::indexing::configuration>(_instance_name);
-    rodsLog(LOG_DEBUG, "value of minimum_delay_time: %d", config->minimum_delay_time);
-    rodsLog(LOG_DEBUG, "value of maximum_delay_time: %d", config->maximum_delay_time);
-    rodsLog(LOG_DEBUG, "value of job_limit_per_collection_indexing_operation: %d", config->job_limit);
-    return SUCCESS();
+	try {
+		config = std::make_unique<irods::indexing::configuration>(_instance_name);
+	}
+	catch (const irods::exception& e) {
+		return e;
+	}
+
+	rodsLog(LOG_DEBUG, "value of minimum_delay_time: %d", config->minimum_delay_time);
+	rodsLog(LOG_DEBUG, "value of maximum_delay_time: %d", config->maximum_delay_time);
+	rodsLog(LOG_DEBUG, "value of job_limit_per_collection_indexing_operation: %d", config->job_limit);
+
+	return SUCCESS();
 } // start
 
 irods::error stop(

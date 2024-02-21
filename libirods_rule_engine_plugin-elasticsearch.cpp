@@ -57,40 +57,55 @@ namespace {
 	using json = nlohmann::json;
     using string_t = std::string;
 
-    struct configuration : irods::indexing::configuration {
-        std::vector<std::string> hosts_;
-        int                      bulk_count_{10};
-        int                      read_size_{4194304};
-        std::string              es_version_{"7."};
-        configuration(const std::string& _instance_name) :
-            irods::indexing::configuration(_instance_name) {
-            try {
-                auto cfg = irods::indexing::get_plugin_specific_configuration(_instance_name);
-                if(cfg.find("hosts") != cfg.end()) {
-                    nlohmann::json host_list = cfg.at("hosts");
-                    for( auto& i : host_list) {
-                        hosts_.push_back(i.get<std::string>());
-                    }
-                }
+	struct configuration : irods::indexing::configuration
+	{
+		std::vector<std::string> hosts;
+		int bulk_count{10};
+		int read_size{4194304};
+		std::string es_version{"7."}; // TODO Not used.
 
-                if(cfg.find("es_version") != cfg.end()) {
-                    es_version_ = cfg.at("es_version").get<std::string>();
-                }
+		configuration(const std::string& _instance_name)
+			: irods::indexing::configuration(_instance_name)
+		{
+			try {
+				auto cfg = irods::indexing::get_plugin_specific_configuration(_instance_name);
 
-                if(cfg.find("bulk_count") != cfg.end()) {
-                    bulk_count_ = cfg.at("bulk_count").get<int>();
-                }
+				if (auto iter = cfg.find("hosts"); iter != cfg.end()) {
+					for (auto& i : *iter) {
+						hosts.push_back(i.get<std::string>());
+					}
+				}
+				else {
+					THROW(USER_INPUT_OPTION_ERR, fmt::format("{}: elasticsearch: [hosts] cannot be empty", __func__));
+				}
 
-                if(cfg.find("read_size") != cfg.end()) {
-                    bulk_count_ = cfg.at("read_size").get<int>();
-                }
-            }
-            catch(const std::exception& _e) {
-                THROW(
-                    USER_INPUT_OPTION_ERR, _e.what());
-            }
-        }// ctor
-    }; // configuration
+				if (auto iter = cfg.find("es_version"); iter != cfg.end()) {
+					es_version = iter->get<std::string>();
+				}
+
+				if (auto iter = cfg.find("bulk_count"); iter != cfg.end()) {
+					bulk_count = iter->get<int>();
+					if (bulk_count <= 0) {
+						THROW(USER_INPUT_OPTION_ERR,
+						      fmt::format(
+								  "{}: elasticsearch: Invalid value [{}] for [bulk_count]", __func__, bulk_count));
+					}
+				}
+
+				if (auto iter = cfg.find("read_size"); iter != cfg.end()) {
+					read_size = iter->get<int>();
+					if (read_size <= 0) {
+						THROW(
+							USER_INPUT_OPTION_ERR,
+							fmt::format("{}: elasticsearch: Invalid value [{}] for [read_size]", __func__, read_size));
+					}
+				}
+			}
+			catch (const std::exception& _e) {
+				THROW(USER_INPUT_OPTION_ERR, _e.what());
+			}
+		}
+	}; // struct configuration
 
     std::unique_ptr<configuration> config;
     std::string object_index_policy;
@@ -101,7 +116,7 @@ namespace {
 	auto send_http_request(http::verb _verb, const std::string_view _target, const std::string_view _body = "")
 		-> http_response
 	{
-		for (auto&& host : config->hosts_) {
+		for (auto&& host : config->hosts) {
 			if (host.empty()) {
 				rodsLog(LOG_ERROR, "%s: empty service URL.", __func__);
 				continue;
@@ -339,7 +354,7 @@ namespace {
 	{
 		try {
 			const std::string object_id = get_object_index_id(_rei, _object_path);
-			std::vector<char> buffer(config->read_size_);
+			std::vector<char> buffer(config->read_size);
 			irods::experimental::io::server::basic_transport<char> xport(*_rei->rsComm);
 			irods::experimental::io::idstream in{xport, _object_path};
 
@@ -373,7 +388,7 @@ namespace {
 				// clang-format on
 
 				// Send bulk request if chunk counter has reached bulk limit.
-				if (chunk_counter == config->bulk_count_) {
+				if (chunk_counter == config->bulk_count) {
 					chunk_counter = 0;
 
 					const auto res = send_http_request(http::verb::post, _index_name + "/_bulk", ss.str());
@@ -636,7 +651,14 @@ irods::error start(
     const std::string& _instance_name ) {
 
     RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
-    config = std::make_unique<configuration>(_instance_name);
+
+	try {
+		config = std::make_unique<configuration>(_instance_name);
+	}
+	catch (const irods::exception& e) {
+		return e;
+	}
+
     object_index_policy = irods::indexing::policy::compose_policy_name(
                                irods::indexing::policy::object::index,
                                "elasticsearch");
