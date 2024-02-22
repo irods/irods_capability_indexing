@@ -892,10 +892,10 @@ namespace
 			if (!irods::is_privileged_client(*rei->rsComm)) {
 				const auto& user = rei->rsComm->clientUser;
 				const auto msg = fmt::format("{}: User [{}#{}] must be a rodsadmin to execute indexing operation [{}].",
-											 __func__,
-											 user.userName,
-											 user.rodsZone,
-											 op);
+				                             __func__,
+				                             user.userName,
+				                             user.rodsZone,
+				                             op);
 				log_re::error(msg);
 				return ERROR(CAT_INSUFFICIENT_PRIVILEGE_LEVEL, std::move(msg));
 			}

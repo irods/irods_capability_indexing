@@ -367,7 +367,7 @@ namespace
 			irods::at_scope_exit free_obj_input{[&obj_input] { clearKeyVal(&obj_input.condInput); }};
 
 			obj_input.dataSize = -1;
-			obj_input.openFlags = O_RDONLY; 
+			obj_input.openFlags = O_RDONLY;
 
 			_object_path.copy(obj_input.objPath, sizeof(obj_input.objPath) - 1);
 
