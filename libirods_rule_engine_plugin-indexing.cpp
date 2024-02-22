@@ -838,8 +838,8 @@ namespace
 
 				if (end == std::string_view::npos) {
 					auto msg = fmt::format("Received malformed rule text. "
-										   "Expected closing curly brace following rule text [{}].",
-										   rule_text);
+					                       "Expected closing curly brace following rule text [{}].",
+					                       rule_text);
 					log_re::error(msg);
 					return ERROR(SYS_INVALID_INPUT_PARAM, std::move(msg));
 				}
@@ -855,8 +855,8 @@ namespace
 
 					if (end == std::string_view::npos) {
 						auto msg = fmt::format("Received malformed rule text. "
-											   "Expected closing curly brace following rule text [{}].",
-											   rule_text);
+						                       "Expected closing curly brace following rule text [{}].",
+						                       rule_text);
 						log_re::error(msg);
 						return ERROR(SYS_INVALID_INPUT_PARAM, std::move(msg));
 					}
@@ -888,36 +888,36 @@ namespace
 			const auto& op = rule_obj.at("rule-engine-operation").get_ref<const std::string&>();
 
 			if (irods::indexing::policy::object::index == op) {
-					// proxy for provided user name
-					//const std::string& user_name = rule_obj["user-name"];
-					//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+				// proxy for provided user name
+				//const std::string& user_name = rule_obj["user-name"];
+				//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
-					// - implement (full-text?) indexing on an individual object
-					// -     as a delayed task.
-					// -
-					apply_object_policy(rei,
-					                    irods::indexing::policy::object::index,
-					                    rule_obj.at("object-path").get_ref<const std::string&>(),
-					                    rule_obj.at("source-resource").get_ref<const std::string&>(),
-					                    rule_obj.at("indexer").get_ref<const std::string&>(),
-					                    rule_obj.at("index-name").get_ref<const std::string&>(),
-					                    rule_obj.at("index-type").get_ref<const std::string&>());
+				// - implement (full-text?) indexing on an individual object
+				// -     as a delayed task.
+				// -
+				apply_object_policy(rei,
+				                    irods::indexing::policy::object::index,
+				                    rule_obj.at("object-path").get_ref<const std::string&>(),
+				                    rule_obj.at("source-resource").get_ref<const std::string&>(),
+				                    rule_obj.at("indexer").get_ref<const std::string&>(),
+				                    rule_obj.at("index-name").get_ref<const std::string&>(),
+				                    rule_obj.at("index-type").get_ref<const std::string&>());
 			}
 			else if (irods::indexing::policy::object::purge == op) {
-					// proxy for provided user name
-					//const std::string& user_name = rule_obj["user-name"];
-					//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+				// proxy for provided user name
+				//const std::string& user_name = rule_obj["user-name"];
+				//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
-					// - implement index purge on an individual object
-					// -    as a delayed task.
-					// -
-					apply_object_policy(rei,
-					                    irods::indexing::policy::object::purge,
-					                    rule_obj.at("object-path").get_ref<const std::string&>(),
-					                    rule_obj.at("source-resource").get_ref<const std::string&>(),
-					                    rule_obj.at("indexer").get_ref<const std::string&>(),
-					                    rule_obj.at("index-name").get_ref<const std::string&>(),
-					                    rule_obj.at("index-type").get_ref<const std::string&>());
+				// - implement index purge on an individual object
+				// -    as a delayed task.
+				// -
+				apply_object_policy(rei,
+				                    irods::indexing::policy::object::purge,
+				                    rule_obj.at("object-path").get_ref<const std::string&>(),
+				                    rule_obj.at("source-resource").get_ref<const std::string&>(),
+				                    rule_obj.at("indexer").get_ref<const std::string&>(),
+				                    rule_obj.at("index-name").get_ref<const std::string&>(),
+				                    rule_obj.at("index-type").get_ref<const std::string&>());
 			}
 			else if (irods::indexing::policy::collection::index == op) {
 				// - launch delayed task to handle indexing events under a collection
@@ -944,32 +944,32 @@ namespace
 				                                          rule_obj.at("index-type").get_ref<const std::string&>());
 			}
 			else if (irods::indexing::policy::metadata::index == op) {
-					// proxy for provided user name
-					//const std::string& user_name = rule_obj["user-name"];
-					//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+				// proxy for provided user name
+				//const std::string& user_name = rule_obj["user-name"];
+				//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
-					apply_metadata_policy(rei,
-					                      irods::indexing::policy::metadata::index,
-					                      rule_obj.at("object-path").get_ref<const std::string&>(),
-					                      rule_obj.at("indexer").get_ref<const std::string&>(),
-					                      rule_obj.at("index-name").get_ref<const std::string&>(),
-					                      rule_obj.at("attribute").get_ref<const std::string&>(),
-					                      rule_obj.at("value").get_ref<const std::string&>(),
-					                      rule_obj.at("units").get_ref<const std::string&>());
+				apply_metadata_policy(rei,
+				                      irods::indexing::policy::metadata::index,
+				                      rule_obj.at("object-path").get_ref<const std::string&>(),
+				                      rule_obj.at("indexer").get_ref<const std::string&>(),
+				                      rule_obj.at("index-name").get_ref<const std::string&>(),
+				                      rule_obj.at("attribute").get_ref<const std::string&>(),
+				                      rule_obj.at("value").get_ref<const std::string&>(),
+				                      rule_obj.at("units").get_ref<const std::string&>());
 			}
 			else if (irods::indexing::policy::metadata::purge == op) {
-					// proxy for provided user name
-					//const std::string& user_name = rule_obj["user-name"];
-					//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
+				// proxy for provided user name
+				//const std::string& user_name = rule_obj["user-name"];
+				//rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
-					apply_metadata_policy(rei,
-					                      irods::indexing::policy::metadata::purge,
-					                      rule_obj.at("object-path").get_ref<const std::string&>(),
-					                      rule_obj.at("indexer").get_ref<const std::string&>(),
-					                      rule_obj.at("index-name").get_ref<const std::string&>(),
-					                      rule_obj.at("attribute").get_ref<const std::string&>(),
-					                      rule_obj.at("value").get_ref<const std::string&>(),
-					                      rule_obj.at("units").get_ref<const std::string&>());
+				apply_metadata_policy(rei,
+				                      irods::indexing::policy::metadata::purge,
+				                      rule_obj.at("object-path").get_ref<const std::string&>(),
+				                      rule_obj.at("indexer").get_ref<const std::string&>(),
+				                      rule_obj.at("index-name").get_ref<const std::string&>(),
+				                      rule_obj.at("attribute").get_ref<const std::string&>(),
+				                      rule_obj.at("value").get_ref<const std::string&>(),
+				                      rule_obj.at("units").get_ref<const std::string&>());
 			}
 			else if ("irods_policy_recursive_rm_object_by_path" == op) {
 				//const std::string& user_name = rule_obj["user-name"];
