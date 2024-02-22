@@ -7,8 +7,10 @@
 #include <irods/irods_re_ruleexistshelper.hpp>
 #include <irods/irods_resource_backport.hpp>
 #include <irods/objDesc.hpp>
+#include <irods/rodsErrorTable.h>
 #include <irods/rsModAVUMetadata.hpp>
 #include <irods/irods_logger.hpp>
+#include <irods/irods_rs_comm_query.hpp>
 
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include <irods/filesystem.hpp>
@@ -886,6 +888,17 @@ namespace
 			}
 
 			const auto& op = rule_obj.at("rule-engine-operation").get_ref<const std::string&>();
+
+			if (!irods::is_privileged_client(*rei->rsComm)) {
+				const auto& user = rei->rsComm->clientUser;
+				const auto msg = fmt::format("{}: User [{}#{}] must be a rodsadmin to execute indexing operation [{}].",
+											 __func__,
+											 user.userName,
+											 user.rodsZone,
+											 op);
+				log_re::error(msg);
+				return ERROR(CAT_INSUFFICIENT_PRIVILEGE_LEVEL, std::move(msg));
+			}
 
 			if (irods::indexing::policy::object::index == op) {
 				// proxy for provided user name
