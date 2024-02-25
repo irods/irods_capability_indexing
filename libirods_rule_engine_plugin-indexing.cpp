@@ -1,6 +1,7 @@
 #include "indexing_utilities.hpp"
 #include "utilities.hpp"
 
+#include <initializer_list>
 #include <irods/irods_hierarchy_parser.hpp>
 #include <irods/irods_log.hpp>
 #include <irods/irods_re_plugin.hpp>
@@ -35,6 +36,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <typeinfo>
 #include <vector>
@@ -505,6 +507,96 @@ namespace
 					}
 				}
 			}
+			else {
+				//
+				// This block allows indexing rules to be invoked from other REPs.
+				// For example, the NREP.
+				//
+
+				// The set of rules that can be manually invoked by the rodsadmin user.
+				// The rules must be aliased to avoid infinite loops.
+				const std::map<std::string_view, std::string_view> invocable_rules{
+					{"indexing_index_data_object", irods::indexing::policy::object::index},
+					{"indexing_purge_data_object", irods::indexing::policy::object::purge},
+					{"indexing_index_collection", irods::indexing::policy::collection::index},
+					{"indexing_purge_collection", irods::indexing::policy::collection::purge},
+					{"indexing_index_metadata", irods::indexing::policy::metadata::index},
+					{"indexing_purge_metadata", irods::indexing::policy::metadata::purge},
+					{"indexing_remove_data_object_by_path", "irods_policy_recursive_rm_object_by_path"}
+				};
+
+				const auto end = std::end(invocable_rules);
+				const auto rule_iter = invocable_rules.find(_rn);
+				//const auto rule_iter = std::find_if(std::begin(invocable_rules), end, [&_rn](const auto _ir) {
+					//return _ir == _rn;
+				//});
+
+				if (rule_iter == end) {
+					// TODO Should we log here?
+					return;
+				}
+
+				if (!irods::is_privileged_client(*_rei->rsComm)) {
+					const auto& user = _rei->rsComm->clientUser;
+					auto msg = fmt::format("{}: User [{}#{}] must be a rodsadmin to execute indexing operation [{}].",
+										   __func__,
+										   user.userName,
+										   user.rodsZone,
+										   _rn);
+					log_re::error(msg);
+					THROW(CAT_INSUFFICIENT_PRIVILEGE_LEVEL, std::move(msg));
+				}
+
+				rodsLog(LOG_NOTICE, "%s: indexing rule = [%s]", __func__, rule_iter->second.data());
+				for (auto&& arg : _args) {
+					rodsLog(LOG_NOTICE, "arg = [%s]", boost::any_cast<std::string*>(arg)->c_str());
+				}
+
+				std::string policy_name;
+				std::list<boost::any> args;
+
+				// Find the indexing technology input argument.
+				if (rule_iter->first.ends_with("data_object")) {
+					//auto iter = std::cbegin(_args);
+					//std::advance(iter, 3);
+					auto iter = std::end(_args);
+					iter = std::prev(iter);
+					const auto* indexing_technology = boost::any_cast<std::string*>(*iter);
+					rodsLog(LOG_NOTICE, "%s: indexing_technology = [%s]", __func__, indexing_technology->c_str());
+					//policy_name = irods::indexing::policy::compose_policy_name(std::string{rule_iter->second}, *indexing_technology);
+					policy_name = rule_iter->second;
+					rodsLog(LOG_NOTICE, "%s: policy name = [%s]", __func__, policy_name.c_str());
+
+					iter = std::begin(_args);
+					args.push_back(*iter); //boost::any(_object_path));
+					args.push_back(*++iter); //boost::any(_source_resource));
+					args.push_back(*++iter); //boost::any(_index_name));
+					args.push_back(*++iter); //boost::any(_index_type));
+
+					rodsLog(LOG_NOTICE, "%s: testing boost::any copy operation", __func__);
+					for (auto&& arg : args) {
+						rodsLog(LOG_NOTICE, "arg = [%s]", boost::any_cast<std::string*>(arg)->c_str());
+					}
+				}
+				else if (rule_iter->first.ends_with("collection")) {
+					//auto b = std::cbegin(_args);
+					//std::advance(b, 2);
+					//const auto* indexing_technology = boost::any_cast<std::string*>(*b);
+					//policy_name = irods::indexing::policy::compose_policy_name(std::string{rule_iter->second}, *indexing_technology);
+				}
+				else if (rule_iter->first.ends_with("metadata")) {
+				}
+				else if (rule_iter->first.ends_with("data_object_by_path")) {
+					//auto b = std::cbegin(_args);
+					//std::advance(b, 2);
+					//const auto* indexing_technology = boost::any_cast<std::string*>(*b);
+					//policy_name = // The actual policy name.
+				}
+
+				//irods::indexing::invoke_policy(_rei, std::string{*rule_iter}, _args);
+				//irods::indexing::invoke_policy(_rei, policy_name, _args);
+				irods::indexing::invoke_policy(_rei, policy_name, args);
+			}
 		}
 		catch (const boost::bad_any_cast& _e) {
 			THROW(INVALID_ANY_CAST, boost::str(boost::format("function [%s] rule name [%s]") % __FUNCTION__ % _rn));
@@ -764,7 +856,7 @@ namespace
 
 	irods::error rule_exists(irods::default_re_ctx&, const std::string& _rn, bool& _ret)
 	{
-		const std::set<std::string> rules{
+		const std::set<std::string_view> rules{
 			"pep_api_atomic_apply_metadata_operations_pre",
 			"pep_api_atomic_apply_metadata_operations_post",
 			"pep_api_data_obj_open_post",
@@ -779,14 +871,45 @@ namespace
 			"pep_api_phy_path_reg_post",
 			"pep_api_rm_coll_pre",
 			"pep_api_rm_coll_post",
+			"indexing_index_data_object",
+			"indexing_purge_data_object",
+			"indexing_index_collection",
+			"indexing_purge_collection",
+			"indexing_index_metadata",
+			"indexing_purge_metadata",
+			"indexing_remove_data_object_by_path"
 		};
 		_ret = rules.find(_rn) != rules.end();
 
 		return SUCCESS();
 	} // rule_exists
 
-	irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>&)
+	irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>& _rules)
 	{
+		_rules.push_back("pep_api_atomic_apply_metadata_operations_pre");
+		_rules.push_back("pep_api_atomic_apply_metadata_operations_post");
+		_rules.push_back("pep_api_data_obj_open_post");
+		_rules.push_back("pep_api_data_obj_create_post");
+		_rules.push_back("pep_api_data_obj_repl_post");
+		_rules.push_back("pep_api_data_obj_unlink_pre");
+		_rules.push_back("pep_api_data_obj_unlink_post");
+		_rules.push_back("pep_api_mod_avu_metadata_pre");
+		_rules.push_back("pep_api_mod_avu_metadata_post");
+		_rules.push_back("pep_api_data_obj_close_post");
+		_rules.push_back("pep_api_data_obj_put_post");
+		_rules.push_back("pep_api_phy_path_reg_post");
+		_rules.push_back("pep_api_rm_coll_pre");
+		_rules.push_back("pep_api_rm_coll_post");
+
+		// Rules that can be manually invoked by a rodsadmin.
+		_rules.push_back("indexing_index_data_object");
+		_rules.push_back("indexing_purge_data_object");
+		_rules.push_back("indexing_index_collection");
+		_rules.push_back("indexing_purge_collection");
+		_rules.push_back("indexing_index_metadata");
+		_rules.push_back("indexing_purge_metadata");
+		_rules.push_back("indexing_remove_data_object_by_path");
+
 		return SUCCESS();
 	} // list_rules
 
@@ -891,7 +1014,7 @@ namespace
 
 			if (!irods::is_privileged_client(*rei->rsComm)) {
 				const auto& user = rei->rsComm->clientUser;
-				const auto msg = fmt::format("{}: User [{}#{}] must be a rodsadmin to execute indexing operation [{}].",
+				auto msg = fmt::format("{}: User [{}#{}] must be a rodsadmin to execute indexing operation [{}].",
 				                             __func__,
 				                             user.userName,
 				                             user.rodsZone,
