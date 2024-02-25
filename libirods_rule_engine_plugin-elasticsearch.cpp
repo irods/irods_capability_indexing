@@ -401,6 +401,9 @@ namespace
 
 			while (true) {
 				bytes_read = rsDataObjRead(_rei->rsComm, &read_input, &bbuf_output);
+
+				// TODO Log an error? The dstream library doesn't expose error codes, yet.
+				// It's not clear it ever will either.
 #endif // IRODS_HAS_FEATURE_ADMIN_MODE_FOR_DSTREAM_LIBRARIES
 
 				// The indexing instruction.
