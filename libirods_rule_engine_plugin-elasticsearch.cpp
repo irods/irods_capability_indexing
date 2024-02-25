@@ -425,7 +425,8 @@ namespace
 					{"data", std::string_view(buffer.data(), in.gcount())}
 #else
 					// Take the max to avoid passing an integer that's less than zero to the
-					// the string_view constructor.
+					// the string_view constructor. This can occur when the read operation
+					// experiences an error.
 					{"data", std::string_view(buffer.data(), std::max(0, bytes_read))}
 #endif // IRODS_HAS_FEATURE_ADMIN_MODE_FOR_DSTREAM_LIBRARIES
 				}.dump(indent, indent_char, ensure_ascii, json::error_handler_t::ignore) << '\n';
