@@ -995,5 +995,52 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                             for name, value in test_config.items()
                         ))
 
+	def test_rodsadmin_can_invoke_indexing_rules_using_irule__issue_124(self):
+		with session.make_session_for_existing_admin() as admin_session:
+			data_object = 'indexing_issue_124.txt'
+			contents = data_object
+
+			try:
+				create_metadata_index()
+				create_fulltext_index()
+
+				admin_session.assert_icommand(['istream', 'write', data_object], input=contents)
+
+				attribute = 'issue_124_attribute'
+				value = 'issue_124_value'
+				units = 'issue_124_units'
+				admin_session.assert_icommand(['imeta', 'add', '-d', data_object, attribute, value, units])
+
+				with indexing_plugin__installed():
+					rep_name = 'irods_rule_engine_plugin-irods_rule_language-instance'
+
+					# Index data object.
+					admin_session.assert_icommand(['irule', '-r', rep_name, f'indexing_index_data_object("")', 'null', 'ruleExecOut'])
+
+					# Purge data object.
+					admin_session.assert_icommand(['irule', '-r', rep_name, f'indexing_purge_data_object("")', 'null', 'ruleExecOut'])
+
+					# index collection
+					# purge collection
+
+					# index metadata
+					# purge metadata
+
+			finally:
+				delete_metadata_index()
+				delete_fulltext_index()
+
+				admin_session.assert_icommand(['irm', '-f', data_object])
+				admin_session.assert_icommand(['iadmin', 'rum'])
+
+	def test_non_rodsadmin_users_cannot_invoke_indexing_rules_using_irule__issue_124(self):
+		pass
+
+	def test_indexing_rules_are_invocable_from_irods_rule_language__issue_124(self):
+		pass
+
+	def test_indexing_rules_are_invocable_from_irods_rule_language__issue_124(self):
+		pass
+
 if __name__ == '__main__':
     unittest.main()

@@ -522,14 +522,11 @@ namespace
 					{"indexing_purge_collection", irods::indexing::policy::collection::purge},
 					{"indexing_index_metadata", irods::indexing::policy::metadata::index},
 					{"indexing_purge_metadata", irods::indexing::policy::metadata::purge},
-					{"indexing_remove_data_object_by_path", "irods_policy_recursive_rm_object_by_path"}
+					{"indexing_remove_by_path", "irods_policy_recursive_rm_object_by_path"}
 				};
 
 				const auto end = std::end(invocable_rules);
 				const auto rule_iter = invocable_rules.find(_rn);
-				//const auto rule_iter = std::find_if(std::begin(invocable_rules), end, [&_rn](const auto _ir) {
-					//return _ir == _rn;
-				//});
 
 				if (rule_iter == end) {
 					// TODO Should we log here?
@@ -555,46 +552,101 @@ namespace
 				std::string policy_name;
 				std::list<boost::any> args;
 
+				const auto get_string = [](const boost::any& _v) -> std::string& {
+					return *boost::any_cast<std::string*>(_v);
+				};
+
 				// Find the indexing technology input argument.
-				if (rule_iter->first.ends_with("data_object")) {
-					//auto iter = std::cbegin(_args);
-					//std::advance(iter, 3);
+				if (rule_iter->first.ends_with("_data_object")) {
 					auto iter = std::end(_args);
-					iter = std::prev(iter);
-					const auto* indexing_technology = boost::any_cast<std::string*>(*iter);
+					const auto* indexing_technology = boost::any_cast<std::string*>(*std::prev(iter));
 					rodsLog(LOG_NOTICE, "%s: indexing_technology = [%s]", __func__, indexing_technology->c_str());
-					//policy_name = irods::indexing::policy::compose_policy_name(std::string{rule_iter->second}, *indexing_technology);
-					policy_name = rule_iter->second;
+
+					policy_name = irods::indexing::policy::compose_policy_name(std::string{rule_iter->second}, *indexing_technology);
 					rodsLog(LOG_NOTICE, "%s: policy name = [%s]", __func__, policy_name.c_str());
 
 					iter = std::begin(_args);
-					args.push_back(*iter); //boost::any(_object_path));
-					args.push_back(*++iter); //boost::any(_source_resource));
-					args.push_back(*++iter); //boost::any(_index_name));
-					args.push_back(*++iter); //boost::any(_index_type));
+					args.push_back(get_string(*iter)); // logical path
+					args.push_back(get_string(*++iter)); // source resource
+					args.push_back(get_string(*++iter)); // index name
+					//args.push_back(get_string(*++iter)); // index type
 
 					rodsLog(LOG_NOTICE, "%s: testing boost::any copy operation", __func__);
 					for (auto&& arg : args) {
-						rodsLog(LOG_NOTICE, "arg = [%s]", boost::any_cast<std::string*>(arg)->c_str());
+						rodsLog(LOG_NOTICE, "arg = [%s]", boost::any_cast<std::string>(arg).c_str());
 					}
 				}
-				else if (rule_iter->first.ends_with("collection")) {
-					//auto b = std::cbegin(_args);
-					//std::advance(b, 2);
-					//const auto* indexing_technology = boost::any_cast<std::string*>(*b);
-					//policy_name = irods::indexing::policy::compose_policy_name(std::string{rule_iter->second}, *indexing_technology);
+				else if (rule_iter->first.ends_with("_collection")) {
+					auto iter = std::begin(_args);
+					const auto collection = get_string(*iter);
+					const auto user_name = get_string(*++iter);
+					const auto indexer = get_string(*++iter);
+					const auto index_name = get_string(*++iter);
+					const auto index_type = get_string(*++iter);
+
+					irods::indexing::indexer idx{_rei, config->instance_name};
+
+					// Add task to the delay queue to potentially large collections do not
+					// block clients from making progress.
+					idx.schedule_policy_events_for_collection(irods::indexing::operation_type::index,
+															  collection,
+															  user_name,
+															  indexer,
+															  index_name,
+															  index_type);
+
+					return;
 				}
-				else if (rule_iter->first.ends_with("metadata")) {
+				else if (rule_iter->first.ends_with("_metadata")) {
+					auto iter = std::end(_args);
+					const auto* indexing_technology = boost::any_cast<std::string*>(*std::prev(iter));
+					rodsLog(LOG_NOTICE, "%s: indexing_technology = [%s]", __func__, indexing_technology->c_str());
+
+					policy_name = irods::indexing::policy::compose_policy_name(std::string{rule_iter->second}, *indexing_technology);
+					rodsLog(LOG_NOTICE, "%s: policy name = [%s]", __func__, policy_name.c_str());
+
+					iter = std::begin(_args);
+					args.push_back(get_string(*iter)); // logical path
+					args.push_back(get_string(*++iter)); // attribute (elastisearch plugin: op branches based on emptiness)
+					args.push_back(get_string(*++iter)); // value
+					args.push_back(get_string(*++iter)); // units
+					args.push_back(get_string(*++iter)); // index name
+					//args.push_back(get_string(*++iter)); // fetch system metadata (boolean: 0 or 1)
+					//args.push_back(boost::any(get_system_metadata(_rei, _object_path).dump()));
+					//args.push_back(get_string(*++iter)); //boost::any(_index_type));
+
+					rodsLog(LOG_NOTICE, "%s: testing boost::any copy operation", __func__);
+					for (auto&& arg : args) {
+						rodsLog(LOG_NOTICE, "arg = [%s]", boost::any_cast<std::string>(arg).c_str());
+					}
 				}
-				else if (rule_iter->first.ends_with("data_object_by_path")) {
-					//auto b = std::cbegin(_args);
-					//std::advance(b, 2);
-					//const auto* indexing_technology = boost::any_cast<std::string*>(*b);
-					//policy_name = // The actual policy name.
+				else if (rule_iter->first.ends_with("_by_path")) {
+					auto iter = std::end(_args);
+					const auto* indexing_technology = boost::any_cast<std::string*>(*std::prev(iter));
+					rodsLog(LOG_NOTICE, "%s: indexing_technology = [%s]", __func__, indexing_technology->c_str());
+
+					policy_name = "irods_policy_recursive_rm_object_by_path";
+					rodsLog(LOG_NOTICE, "%s: policy name = [%s]", __func__, policy_name.c_str());
+
+					iter = std::begin(_args);
+					args.push_back(get_string(*iter)); // logical path
+					++iter; // second arg is ignored
+
+					args.push_back(get_string(*++iter)); // user expected to pass JSON string like {"is_collection": boolean, "indices": ["index_name", ...]}
+					//args.push_back(nlohmann::json{
+					//	{"is_collection", false},
+					//	{"indices", nlohmann::json::array({
+					//		""
+					//	})}
+					//}.dump());
+					//args.push_back(get_string(*++iter)); //boost::any(_index_type));
+
+					rodsLog(LOG_NOTICE, "%s: testing boost::any copy operation", __func__);
+					for (auto&& arg : args) {
+						rodsLog(LOG_NOTICE, "arg = [%s]", boost::any_cast<std::string>(arg).c_str());
+					}
 				}
 
-				//irods::indexing::invoke_policy(_rei, std::string{*rule_iter}, _args);
-				//irods::indexing::invoke_policy(_rei, policy_name, _args);
 				irods::indexing::invoke_policy(_rei, policy_name, args);
 			}
 		}
