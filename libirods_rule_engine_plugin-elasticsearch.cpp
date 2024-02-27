@@ -63,6 +63,8 @@ namespace
 		int bulk_count{10};
 		int read_size{4194304};
 		std::string es_version{"7."}; // TODO Not used.
+		std::string es_tls_cert_file;
+		std::string es_auth_creds;
 
 		configuration(const std::string& _instance_name)
 			: irods::indexing::configuration(_instance_name)
@@ -100,6 +102,14 @@ namespace
 							fmt::format("{}: elasticsearch: Invalid value [{}] for [read_size]", __func__, read_size));
 					}
 				}
+
+				if (auto iter = cfg.find("tls_certificate_file"); iter != cfg.end()) {
+					es_tls_cert_file = iter->get_ref<const std::string&>();
+				}
+
+				if (auto iter = cfg.find("authorization_basic_credentials"); iter != cfg.end()) {
+					es_auth_creds = "Basic " + iter->get_ref<const std::string&>();
+				}
 			}
 			catch (const std::exception& _e) {
 				THROW(USER_INPUT_OPTION_ERR, _e.what());
@@ -124,13 +134,11 @@ namespace
 
 			namespace urls = boost::urls;
 
-			urls::result<urls::url_view> result = urls::parse_uri(host);
-			if (!result) {
+			urls::result<urls::url_view> url_parse_result = urls::parse_uri(host);
+			if (!url_parse_result) {
 				rodsLog(LOG_ERROR, fmt::format("{}: could not parse service URL [{}].", __func__, host).c_str());
 				continue;
 			}
-
-			const auto use_tls = (result->has_scheme() && result->scheme_id() == urls::scheme::https);
 
 			namespace net = boost::asio;
 			using tcp = net::ip::tcp;
@@ -141,6 +149,10 @@ namespace
 				req.set(http::field::host, boost::asio::ip::host_name());
 				req.set(http::field::user_agent, "iRODS Indexing Plugin/" IRODS_PLUGIN_VERSION);
 				req.set(http::field::content_type, "application/json");
+
+				if (!config->es_auth_creds.empty()) {
+					req.set(http::field::authorization, config->es_auth_creds);
+				}
 
 				if (!_body.empty()) {
 					req.body() = _body;
@@ -176,24 +188,33 @@ namespace
 
 			try {
 				net::io_context ioc;
-
 				tcp::resolver resolver{ioc};
-				const auto results = resolver.resolve(result->host(), result->port());
 
-				if (use_tls) {
+				// If the admin does not define a port, ".port()" will return an empty string and
+				// communication with elasticsearch will not be possible.
+				const auto results = resolver.resolve(url_parse_result->host(), url_parse_result->port());
+
+				if (url_parse_result->scheme_id() == urls::scheme::https) {
 					net::ssl::context tls_ctx{net::ssl::context::tlsv12_client};
-					tls_ctx.set_default_verify_paths();
 					tls_ctx.set_verify_mode(net::ssl::verify_peer);
+
+					if (!config->es_tls_cert_file.empty()) {
+						tls_ctx.load_verify_file(config->es_tls_cert_file);
+					}
+					else {
+						tls_ctx.set_default_verify_paths();
+					}
 
 					beast::ssl_stream<beast::tcp_stream> stream{ioc, tls_ctx};
 
 					// Set SNI hostname (many hosts need this to handshake successfully).
-					if (!::SSL_set_tlsext_host_name(stream.native_handle(), result->host().c_str())) {
+					if (!::SSL_set_tlsext_host_name(stream.native_handle(), url_parse_result->host().c_str())) {
 						beast::error_code ec{static_cast<int>(::ERR_get_error()), net::error::get_ssl_category()};
 						throw beast::system_error{ec};
 					}
 
 					beast::get_lowest_layer(stream).connect(results);
+					stream.handshake(net::ssl::stream_base::client);
 
 					auto res = construct_and_send_http_request(stream);
 

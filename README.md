@@ -2,6 +2,7 @@
 The iRODS indexing capability provides a policy framework around both full text and metadata indexing for the purposes of enhanced data discovery.  Logical collections are annotated with metadata which indicates that any data objects or nested collections of data object should be indexed given a particular indexing technology, index type and index name.
 
 # Configuration
+
 ### Collection Metadata
 
 Collections are annotated with metadata indicating they should be indexed.  The metadata is formatted is as follows:
@@ -26,7 +27,7 @@ By default, should no resource be tagged it is assumed that all resources are av
 
 There are currently three rule engine plugins to configure for the indexing capability which should be added to the `"rule_engines"` section of `/etc/irods/server_config.json`:
 
-```
+```js
 "rule_engines": [
     {
         "instance_name": "irods_rule_engine_plugin-indexing-instance",
@@ -37,7 +38,7 @@ There are currently three rule engine plugins to configure for the indexing capa
         "instance_name": "irods_rule_engine_plugin-elasticsearch-instance",
         "plugin_name": "irods_rule_engine_plugin-elasticsearch",
         "plugin_specific_configuration": {
-            "hosts": ["http://localhost:9200/"],
+            "hosts": ["http://localhost:9200"],
             "bulk_count": 100,
             "read_size": 4194304
         }
@@ -56,6 +57,8 @@ Within each plugin configuration stanza, the "plugin_specific_configuration" obj
 | es_version                                  | string        |  elasticsearch   |   "7.x" | set to "6.x" or "7.x" depending on Elasticsearch version                   |
 | bulk_count                                  | int           |  elasticsearch   |      10 | the number of text chunks processed at once for ES full-text indexing      |
 | read_size                                   | int           |  elasticsearch   | 4194304 | the size of individual text chunks processed for ES full-text indexing     |
+| tls_certificate_file                        | string        |  elasticsearch   |      "" | the absolute path to a TLS certificate used for secure communication with elasticsearch. if empty, OS-dependent default paths are used for certificates verification |
+| authorization_basic_credentials             | string        |  elasticsearch   |      "" | the encoded basic authentication credentials for elasticsearch - i.e. base64_encode(url_encode(username) + ":" + url_encode(password)). only used when when non-empty. recommended when using TLS, but not required |
 
 Currently, due to 32-bit limitations on many architectures, int-type parameters should not exceed a value of INT_MAX = 2^31 - 1 = 2147483647 or the results may
 be undefined.
