@@ -103,7 +103,7 @@ def main():
     if options.do_setup:
         install_build_prerequisites()
 
-        irods_python_ci_utilities.subprocess_get_output(['sudo', '-EH', 'python3', '-m', 'pip', 'install', 'unittest-xml-reporting==1.14.0'])
+        irods_python_ci_utilities.subprocess_get_output(['sudo', '-EH', 'python3', '-m', 'pip', 'install', 'unittest-xml-reporting==1.14.0', 'requests'])
 
         install_indexing_engine(options.indexing_engine)
 

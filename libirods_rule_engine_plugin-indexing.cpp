@@ -522,7 +522,7 @@ namespace
 					{"indexing_purge_collection", irods::indexing::policy::collection::purge},
 					{"indexing_index_metadata", irods::indexing::policy::metadata::index},
 					{"indexing_purge_metadata", irods::indexing::policy::metadata::purge},
-					{"indexing_remove_by_path", "irods_policy_recursive_rm_object_by_path"}
+					{"indexing_purge_by_regex_path", "irods_policy_recursive_rm_object_by_path"}
 				};
 
 				const auto end = std::end(invocable_rules);
