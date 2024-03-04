@@ -531,7 +531,7 @@ namespace irods::indexing
 		params += "<PLUSET>" + sleep_time + "s</PLUSET>";
 
 		rodsLog(config_.log_level,
-		        "irods::storage_tiering :: delay params min [%d] max [%d] computed [%s]",
+		        "indexing: delay params min=[%d], max=[%d], computed=[%s]",
 		        min_time,
 		        max_time,
 		        params.c_str());
