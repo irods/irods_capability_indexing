@@ -513,7 +513,7 @@ namespace irods::indexing
 
 	std::string indexer::generate_delay_execution_parameters()
 	{
-		std::string params{config_.delay_parameters + "<INST_NAME>" + config_.instance_name + "</INST_NAME>"};
+		auto params = fmt::format("{}<INST_NAME>{}</INST_NAME>", config_.delay_parameters, config_.instance_name);
 
 		int min_time = config_.minimum_delay_time <= 0 ? 1 : config_.minimum_delay_time;
 		int max_time = config_.maximum_delay_time <= 0 ? 30 : config_.maximum_delay_time;
@@ -528,7 +528,7 @@ namespace irods::indexing
 		catch (const boost::bad_lexical_cast&) {
 		}
 
-		params += "<PLUSET>" + sleep_time + "s</PLUSET>";
+		params += fmt::format("<PLUSET>{}s</PLUSET>", sleep_time);
 
 		rodsLog(config_.log_level,
 		        "indexing: delay params min=[%d], max=[%d], computed=[%s]",
@@ -537,7 +537,6 @@ namespace irods::indexing
 		        params.c_str());
 
 		return params;
-
 	} // generate_delay_execution_parameters
 
 	void indexer::get_metadata_for_data_object(const std::string& _meta_attr_name,
