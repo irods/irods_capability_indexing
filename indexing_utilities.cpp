@@ -599,8 +599,8 @@ namespace irods::indexing
 	{
 		using json = nlohmann::json;
 
-		const auto& [id_bool, obj_optional_ID] = kws_get<std::string>(_extra_options, "_obj_optional_ID");
-		const auto& [tag_bool, job_category_tag] = kws_get<std::string>(_extra_options, "job_category_tag");
+		const auto [id_bool, obj_optional_ID] = kws_get<std::string>(_extra_options, "_obj_optional_ID");
+		const auto [tag_bool, job_category_tag] = kws_get<std::string>(_extra_options, "job_category_tag");
 
 		json rule_obj;
 		rule_obj["rule-engine-operation"] = _event;
