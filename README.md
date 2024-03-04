@@ -44,7 +44,7 @@ The attribute is configurable within the `plugin_specific_configuration` for the
 
 An administrator may wish to restrict indexing activities to particular resources, for example when automatically ingesting data. Should a storage resource be at the edge, that resource may not be appropriate for indexing. In order to indicate a resource is available for indexing it may be annotated with metadata:
 ```
-imeta add -R <resource name> irods::indexing::index true
+imeta add -R <resource_name> irods::indexing::index true
 ```
 By default, should no resource be tagged it is assumed that all resources are available for indexing. Should the tag exist on any resource in the system, it is assumed that all available resources for indexing are tagged.
 
