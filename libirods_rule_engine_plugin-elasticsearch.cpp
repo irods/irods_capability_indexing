@@ -140,6 +140,14 @@ namespace
 				continue;
 			}
 
+			if (!url_parse_result->has_port()) {
+				rodsLog(LOG_WARNING,
+				        "%s: elasticsearch service URL [%s] must include a port number. without it, communication may "
+				        "fail.",
+				        __func__,
+				        host.c_str());
+			}
+
 			namespace net = boost::asio;
 			using tcp = net::ip::tcp;
 
