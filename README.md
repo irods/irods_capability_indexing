@@ -138,10 +138,9 @@ Caveats:
    - start from a baseline configuration with no indexing plugins installed.
 
 Prerequisites:
-   - Install a Java 8 JRE or JDK (OpenJDK versions will suffice).
    - Download, untar, and run the ElasticSearch package or equivalent:
      ```
-     elasticsearch-7.4.2/bin/elasticsearch --daemonize -E discovery.type=single-node
+     elasticsearch-8.12.2/bin/elasticsearch -d -E discovery.type=single-node
      ```
      (Note, a kernel parameter change may be necessary: `sysctl -w vm.max_map_count=262144` .)
    - To signal all tests should be run, even those requiring the python-irodsclient:
