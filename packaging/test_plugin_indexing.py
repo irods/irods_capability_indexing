@@ -25,6 +25,7 @@ from .. import paths
 from .. import lib
 
 import operator
+import requests
 
 long_type = int  # Python 3.x and up
 try:
@@ -994,6 +995,119 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
                                                                          start_index = log_offset)
                             for name, value in test_config.items()
                         ))
+
+    def test_rodsadmin_can_invoke_indexing_rules_using_irule__issue_124(self):
+        with session.make_session_for_existing_admin() as admin_session:
+            collection = f'{admin_session.home_collection}/indexing_issue_124'
+            data_object = f'{collection}/rodsadmin_can_invoke_rules_manually.txt'
+            contents = data_object
+
+            try:
+                create_metadata_index()
+                create_fulltext_index()
+
+                admin_session.assert_icommand(['imkdir', collection])
+                admin_session.assert_icommand(['istream', 'write', data_object], input=contents)
+
+                # Capture the data id of the data object so we can use it to query elasticsearch.
+                ec, out, err = admin_session.assert_icommand(
+                        ['iquest', '%s', "select DATA_ID where COLL_NAME = '{collection}' and DATA_NAME = '{os.path.basename(data_object)'"], 'STDOUT')
+                self.assertEqual(ec, 0)
+                self.assertEqual(len(err.strip()), 0)
+                self.assertGreater(len(out.strip()), 0)
+                data_id = out.strip()
+
+                with indexing_plugin__installed():
+                    rep_name = 'irods_rule_engine_plugin-irods_rule_language-instance'
+
+                    with unittest.subTest('full text indexing and purging of data object'):
+                        # Index data object.
+                        # TODO Seems this should always assume full_text because we have metadata rules.
+                        rule = f'indexing_index_data_object("{data_object}", "demoResc", "{DEFAULT_FULLTEXT_INDEX}", "full_text", "elasticsearch")'
+                        admin_session.assert_icommand(['irule', '-r', rep_name, rule, 'null', 'ruleExecOut'])
+
+                        # Show the contents of the data object has been fully indexed.
+                        r = requests.get(f'localhost:9200/{DEFAULT_FULLTEXT_INDEX}/_doc/{data_id}')
+                        self.assertEqual(r.status_code, 200)
+                        result = r.json()
+                        self.assertEqual(result['_source']['absolutePath'], data_object)
+                        self.assertEqual(result['_source']['data'], contents)
+
+                        # Purge data object.
+                        rule = f'indexing_purge_data_object("{data_object}", "demoResc", "{DEFAULT_FULLTEXT_INDEX}", "full_text", "elasticsearch")'
+                        admin_session.assert_icommand(['irule', '-r', rep_name, rule, 'null', 'ruleExecOut'])
+
+                        # Show the data that was previously indexed no longer exists in the index.
+                        r = requests.get(f'localhost:9200/{DEFAULT_FULLTEXT_INDEX}/_doc/{data_id}')
+                        self.assertEqual(r.status_code, 404)
+                        self.assertEqual(r.json()['found'], False)
+
+                    with unittest.subTest('full text indexing and purging of collection'):
+                        # Index collection.
+                        #
+                        # Because indexing a collection can involve multiple data objects, this rule
+                        # schedules work on the delay queue.
+                        #
+                        # TODO Terrell: Should "delay" be added to the rule name? How about "indexing_index_collection_deferred"?
+                        rule = f'indexing_index_collection("{collection}", "{admin_session.user_name}", "elasticsearch", "{DEFAULT_FULLTEXT_INDEX}", "full_text")'
+                        admin_session.assert_icommand(['irule', '-r', rep_name, rule, 'null', 'ruleExecOut'])
+
+                        # Give the delay server time to wake up and process the rules.
+                        sleep(40)
+
+                        # Show the contents of the data object has been fully indexed.
+                        r = requests.get(f'localhost:9200/{DEFAULT_FULLTEXT_INDEX}/_doc/{data_id}')
+                        self.assertEqual(r.status_code, 200)
+                        result = r.json()
+                        self.assertEqual(result['_source']['absolutePath'], data_object)
+                        self.assertEqual(result['_source']['data'], contents)
+
+                        # Purge collection.
+                        #
+                        # This rule also schedules work on the delay queue.
+                        rule = f'indexing_purge_collection("{collection}", "{admin_session.user_name}", "elasticsearch", "{DEFAULT_FULLTEXT_INDEX}", "full_text")'
+                        admin_session.assert_icommand(['irule', '-r', rep_name, rule, 'null', 'ruleExecOut'])
+
+                        # Show the data that was previously indexed no longer exists in the index.
+                        r = requests.get(f'localhost:9200/{DEFAULT_FULLTEXT_INDEX}/_doc/{data_id}')
+                        self.assertEqual(r.status_code, 404)
+                        self.assertEqual(r.json()['found'], False)
+
+                    with unittest.subTest('metadata indexing and purging of data object'):
+                        # Add metadata to the data object for testing metadata indexing.
+                        attribute = 'issue_124_attribute'
+                        value = 'issue_124_value'
+                        units = 'issue_124_units'
+                        admin_session.assert_icommand(['imeta', 'add', '-d', data_object, attribute, value, units])
+
+                        # Index metadata.
+                        # TODO Indexing metdata for collections is possible too.
+                        rule = f'indexing_index_metadata("{data_object}", "{attribute}", "{value}", "{units}", "{DEFAULT_METADATA_INDEX}", "elasticsearch")'
+                        admin_session.assert_icommand(['irule', '-r', rep_name, rule, 'null', 'ruleExecOut'])
+
+                        # Purge metadata.
+                        rule = f'indexing_purge_metadata("{data_object}", "{attribute}", "{value}", "{units}", "{DEFAULT_METADATA_INDEX}", "elasticsearch")'
+                        admin_session.assert_icommand(['irule', '-r', rep_name, rule, 'null', 'ruleExecOut'])
+
+                    # TODO Recursively remove objects by path.
+                    with unittest.subTest('recursive removal of objects by path'):
+                        pass
+
+            finally:
+                delete_metadata_index()
+                delete_fulltext_index()
+
+                admin_session.assert_icommand(['irm', '-rf', collection])
+                admin_session.assert_icommand(['iadmin', 'rum'])
+
+    def test_non_rodsadmin_users_cannot_invoke_indexing_rules_using_irule__issue_124(self):
+        pass
+
+    def test_indexing_rules_are_invocable_from_irods_rule_language__issue_124(self):
+        pass
+
+    def test_indexing_rules_are_invocable_from_irods_rule_language__issue_124(self):
+        pass
 
 if __name__ == '__main__':
     unittest.main()
