@@ -166,7 +166,13 @@ def get_source_books ( prefix_ = 'Books_', instance = None, attr = None ):
 
     return retvalue
 
-ES_VERSION = '7.x' # TODO We probably don't need this anymore.
+# By default, elasticsearch 8 enables TLS and requires auth credentials.
+# The iRODS consortium test hook captures the necessary values and exposes them
+# to the tests via environment variables. Without these, no communication with
+# elasticsearch 8 is possible.
+ES_AUTH_BASIC_CREDS = os.environ['IRODS_ES_AUTH_BASIC_CREDS']
+ES_PASSWORD = os.environ['IRODS_ES_PASSWORD']
+ES_TLS_CERT_FILE = os.environ['IRODS_ES_TLS_CERT_FILE']
 
 @contextlib.contextmanager
 def indexing_plugin__installed(indexing_config=(), server_env_options={}):
@@ -188,10 +194,11 @@ def indexing_plugin__installed(indexing_config=(), server_env_options={}):
                 "instance_name": "irods_rule_engine_plugin-elasticsearch-instance",
                 "plugin_name": "irods_rule_engine_plugin-elasticsearch",
                 "plugin_specific_configuration": {
-                    "hosts" : ["http://localhost:{}/".format(ELASTICSEARCH_PORT)],
+                    "hosts" : ["https://localhost:{}/".format(ELASTICSEARCH_PORT)],
                     "bulk_count" : 100,
                     "read_size" : 4194304,
-                    "es_version" : ES_VERSION
+                    "tls_certificate_file": ES_TLS_CERT_FILE,
+                    "authorization_basic_credentials": ES_AUTH_BASIC_CREDS
                 }
             }
         ]
@@ -237,8 +244,10 @@ def install_python3_virtualenv_with_python_irodsclient(PATH='~/py3',preTestPRCIn
 # Assuming use for metadata style of index only
 
 def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEARCH_PORT):
+    es_password = ES_PASSWORD
+    es_tls_cert_file = ES_TLS_CERT_FILE
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
+        curl -u 'elastic:{es_password}' --cacert {es_tls_cert_file} -X GET -H'Content-Type: application/json' https://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath", "metadataEntries"],
@@ -263,8 +272,10 @@ def search_index_for_avu_attribute_name(index_name, attr_name, port = ELASTICSEA
 
 def search_index_for_object_path(index_name, path_component, extra_source_fields="", port = ELASTICSEARCH_PORT):
     path_component_matcher = ("*/" + path_component + ("/*" if not path_component.endswith("$") else "")).rstrip("$")
+    es_password = ES_PASSWORD
+    es_tls_cert_file = ES_TLS_CERT_FILE
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
+        curl -u 'elastic:{es_password}' --cacert {es_tls_cert_file} -X GET -H'Content-Type: application/json' https://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath" {extra_source_fields} ],
@@ -283,8 +294,10 @@ def search_index_for_object_path(index_name, path_component, extra_source_fields
 # Assuming use for fulltext style of index only
 
 def search_index_for_All_object_paths(index_name, port = ELASTICSEARCH_PORT):
+    es_password = ES_PASSWORD
+    es_tls_cert_file = ES_TLS_CERT_FILE
     out,_,rc = lib.execute_command_permissive( dedent("""\
-        curl -X GET -H'Content-Type: application/json' http://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
+        curl -u 'elastic:{es_password}' --cacert {es_tls_cert_file} -X GET -H'Content-Type: application/json' https://localhost:{port}/{index_name}/_search?track_total_hits=true&rest_total_hits_as_int=true -d '
         {{
             "from": 0, "size" : 500,
             "_source" : ["absolutePath", "data"],
@@ -304,7 +317,9 @@ def create_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEA
             }
         }
     })
-    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name} -d'{mapping}'".format(**locals()))
+    es_password = ES_PASSWORD
+    es_tls_cert_file = ES_TLS_CERT_FILE
+    lib.execute_command("curl -u 'elastic:{es_password}' --cacert {es_tls_cert_file} -X PUT -H'Content-Type: application/json' https://localhost:{port}/{index_name} -d'{mapping}'".format(**locals()))
     return index_name
 
 def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEARCH_PORT):
@@ -334,14 +349,20 @@ def create_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEA
             }
         }
     })
-    lib.execute_command("curl -X PUT -H'Content-Type: application/json' http://localhost:{port}/{index_name} -d'{mapping}'".format(**locals()))
+    es_password = ES_PASSWORD
+    es_tls_cert_file = ES_TLS_CERT_FILE
+    lib.execute_command("curl -u 'elastic:{es_password}' --cacert {es_tls_cert_file} -X PUT -H'Content-Type: application/json' https://localhost:{port}/{index_name} -d'{mapping}'".format(**locals()))
     return index_name
 
 def delete_fulltext_index(index_name = DEFAULT_FULLTEXT_INDEX, port = ELASTICSEARCH_PORT):
-    lib.execute_command("curl -X DELETE -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
+    es_password = ES_PASSWORD
+    es_tls_cert_file = ES_TLS_CERT_FILE
+    lib.execute_command("curl -u 'elastic:{es_password}' --cacert {es_tls_cert_file} -X DELETE -H'Content-Type: application/json' https://localhost:{port}/{index_name}".format(**locals()))
 
 def delete_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEARCH_PORT):
-    lib.execute_command("curl -X DELETE -H'Content-Type: application/json' http://localhost:{port}/{index_name}".format(**locals()))
+    es_password = ES_PASSWORD
+    es_tls_cert_file = ES_TLS_CERT_FILE
+    lib.execute_command("curl -u 'elastic:{es_password}' --cacert {es_tls_cert_file} -X DELETE -H'Content-Type: application/json' https://localhost:{port}/{index_name}".format(**locals()))
 
 
 debugFileName = None # -- or for example: "/tmp/debug.txt"  # -- for logging debug
