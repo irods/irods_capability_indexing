@@ -81,7 +81,7 @@ def install_indexing_engine (indexing_engine):
         executables = glob.glob(os.path.join(tempdir,'*','bin','elasticsearch'))
         if len(executables) != 1 : raise WrongNumberOfGlobResults
         irods_python_ci_utilities.subprocess_get_output(
-            '''sudo su elastic -c "env JAVA_HOME='{0}' {1} --daemonize -E discovery.type=single-node -E http.port=9100"'''.format(
+            '''sudo su elastic -c "env JAVA_HOME='{0}' {1} --daemonize -E discovery.type=single-node"'''.format(
             Java_Home,executables[0]),shell=True)
     else:
         raise IndexerNotImplemented

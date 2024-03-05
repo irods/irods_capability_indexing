@@ -132,7 +132,7 @@ SOURCE_BOOKS_URL  = 'https://cdn.patricktriest.com/data/books.zip'
 SOURCE_BOOKS_PATH = '/tmp/scratch'
 SOURCE_BOOKS_SUBDIR  = 'books'
 
-ELASTICSEARCH_PORT = 9100
+ELASTICSEARCH_PORT = 9200
 
 DEFAULT_FULLTEXT_INDEX = 'full_text'
 DEFAULT_METADATA_INDEX = 'metadata'
