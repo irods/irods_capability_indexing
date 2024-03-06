@@ -28,18 +28,20 @@ def platform_including_major_revision():
              irods_python_ci_utilities.get_distribution_version_major() )
 
 def get_build_prerequisites_apt():
-    jdk_versions = { ('Debian gnu_linux','11'):'11' }
-    jdk_major = jdk_versions.get(platform_including_major_revision(),'8')
-    pre_reqs = ['uuid-dev', 'libssl-dev', 'libsasl2-2', 'libsasl2-dev', 'python3-dev']
-    pre_reqs += ['openjdk-{}-jre'.format(jdk_major)]
-    pre_reqs += ['curl', 'python3-pip']
-    return get_build_prerequisites_all()+pre_reqs
+    return get_build_prerequisites_all() + [
+        'curl',
+        'libsasl2-2',
+        'libsasl2-dev',
+        'libssl-dev',
+        'python3-dev',
+        'python3-pip',
+        'uuid-dev'
+    ]
 
 def get_build_prerequisites_yum():
     return get_build_prerequisites_all() + [
         'ca-certificates',
         'cyrus-sasl-devel',
-        'java-1.8.0-openjdk-devel',
         'libuuid-devel',
         'openssl-devel',
         'python3-devel',
@@ -51,7 +53,6 @@ def get_build_prerequisites_zypper():
     return get_build_prerequisites_all() + [
         'ca-certificates',
         'curl',
-        'java-1_8_0-openjdk-devel',
         'python3-pip',
         'which'
     ]
@@ -71,15 +72,8 @@ def get_build_prerequisites():
     except KeyError:
         irods_python_ci_utilities.raise_not_implemented_for_distribution()
 
-Java_Home = None
-class WrongJavaAsDefault (RuntimeError): pass
-
 def install_build_prerequisites():
-    global Java_Home
     irods_python_ci_utilities.install_os_packages(get_build_prerequisites())
-    # Java 8 or Later should be used, depending on the Elasticsearch version
-    java_real_bin = os.path.realpath('/usr/bin/java')
-    Java_Home = os.path.sep.join((java_real_bin.split(os.path.sep))[:-2])
 
 class IndexerNotImplemented (RuntimeError): pass
 class WrongNumberOfGlobResults (RuntimeError): pass
