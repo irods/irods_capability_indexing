@@ -21,11 +21,11 @@ set(
 add_library(
     ${TARGET_NAME}
     MODULE
-    ${CMAKE_SOURCE_DIR}/lib${TARGET_NAME}.cpp
-    ${CMAKE_SOURCE_DIR}/configuration.cpp
-    ${CMAKE_SOURCE_DIR}/plugin_specific_configuration.cpp
-    ${CMAKE_SOURCE_DIR}/utilities.cpp
-    ${CMAKE_SOURCE_DIR}/indexing_utilities.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib${TARGET_NAME}.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/configuration.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin_specific_configuration.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/utilities.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/indexing_utilities.cpp
     )
 
 target_include_directories(
@@ -63,8 +63,8 @@ install(
 
 install(
   FILES
-  ${CMAKE_SOURCE_DIR}/packaging/test_plugin_indexing.py
-  ${CMAKE_SOURCE_DIR}/packaging/atomic_metadata_ops.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/packaging/test_plugin_indexing.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/packaging/atomic_metadata_ops.py
   DESTINATION ${IRODS_HOME_DIRECTORY}/scripts/irods/test
   PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
   COMPONENT ${IRODS_PACKAGE_COMPONENT_POLICY_NAME}
@@ -72,14 +72,14 @@ install(
 
 install(
   FILES
-  ${CMAKE_SOURCE_DIR}/packaging/run_indexing_plugin_test.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/packaging/run_indexing_plugin_test.py
   DESTINATION ${IRODS_HOME_DIRECTORY}/scripts
   PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
   COMPONENT ${IRODS_PACKAGE_COMPONENT_POLICY_NAME}
   )
 
-set(CPACK_DEBIAN_${IRODS_PACKAGE_COMPONENT_POLICY_NAME_UPPERCASE}_PACKAGE_CONTROL_EXTRA "${CMAKE_SOURCE_DIR}/packaging/${POLICY_NAME}/postinst;")
-set(CPACK_RPM_${IRODS_PACKAGE_COMPONENT_POLICY_NAME}_POST_INSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/${POLICY_NAME}/postinst")
+set(CPACK_DEBIAN_${IRODS_PACKAGE_COMPONENT_POLICY_NAME_UPPERCASE}_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/packaging/${POLICY_NAME}/postinst;")
+set(CPACK_RPM_${IRODS_PACKAGE_COMPONENT_POLICY_NAME}_POST_INSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/${POLICY_NAME}/postinst")
 
 set(CPACK_DEBIAN_${IRODS_PACKAGE_COMPONENT_POLICY_NAME_UPPERCASE}_PACKAGE_DEPENDS "${IRODS_PACKAGE_DEPENDENCIES_STRING}, irods-server (= ${IRODS_VERSION}), irods-runtime (= ${IRODS_VERSION}), libc6")
 
