@@ -68,7 +68,18 @@ def get_build_prerequisites():
         'Ubuntu': get_build_prerequisites_apt
     }
     try:
-        return dispatch_map[irods_python_ci_utilities.get_distribution()]()
+        distribution, major_version_number = platform_including_major_revision()
+        pkgs = dispatch_map[distribution]()
+
+        # The "swig" package is only available via the "crb" repository in
+        # Rocky Linux 9. The "crb" repository must be enabled before attempting
+        # to install the "swig" package.
+        if ('Rocky linux', '9') == (distribution, major_version_number):
+            pkgs.remove('swig')
+            irods_python_ci_utilities.subprocess_get_output(
+                'sudo dnf config-manager --set-enabled crb && sudo dnf install -y swig', shell=True)
+
+        return pkgs
     except KeyError:
         irods_python_ci_utilities.raise_not_implemented_for_distribution()
 
