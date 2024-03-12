@@ -1,4 +1,4 @@
-#include "plugin_specific_configuration.hpp"
+#include "irods/private/indexing/plugin_specific_configuration.hpp"
 
 #include <irods/irods_exception.hpp>
 #include <irods/irods_server_properties.hpp>

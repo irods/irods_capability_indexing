@@ -1,7 +1,7 @@
-#include "indexing_utilities.hpp"
+#include "irods/private/indexing/indexing_utilities.hpp"
 
-#include "cpp_json_kw.hpp"
-#include "utilities.hpp"
+#include "irods/private/indexing/cpp_json_kw.hpp"
+#include "irods/private/indexing/utilities.hpp"
 
 #include <irods/irods_at_scope_exit.hpp>
 #include <irods/irods_re_plugin.hpp>

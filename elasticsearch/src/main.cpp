@@ -1,6 +1,6 @@
-#include "configuration.hpp"
-#include "plugin_specific_configuration.hpp"
-#include "utilities.hpp"
+#include "irods/private/indexing/configuration.hpp"
+#include "irods/private/indexing/plugin_specific_configuration.hpp"
+#include "irods/private/indexing/utilities.hpp"
 
 #include <irods/MD5Strategy.hpp>
 #include <irods/irods_hasher_factory.hpp>

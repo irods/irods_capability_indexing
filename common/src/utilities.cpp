@@ -1,4 +1,4 @@
-#include "utilities.hpp"
+#include "irods/private/indexing/utilities.hpp"
 
 #include <irods/rcMisc.h>
 
