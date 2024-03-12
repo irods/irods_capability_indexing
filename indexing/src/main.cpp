@@ -1,5 +1,5 @@
-#include "indexing_utilities.hpp"
-#include "utilities.hpp"
+#include "irods/private/indexing/indexing_utilities.hpp"
+#include "irods/private/indexing/utilities.hpp"
 
 #include <irods/irods_hierarchy_parser.hpp>
 #include <irods/irods_log.hpp>

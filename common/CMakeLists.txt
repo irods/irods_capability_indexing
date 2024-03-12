@@ -1,0 +1,36 @@
+add_library(
+	irods_cap_indexing_common_obj
+	OBJECT
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/plugin_specific_configuration.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/configuration.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/utilities.cpp"
+)
+target_link_libraries(
+	irods_cap_indexing_common_obj
+	PUBLIC
+	irods_common
+	irods_server
+	nlohmann_json::nlohmann_json
+	PRIVATE
+	"${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_system.so"
+	"${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so"
+	"${IRODS_EXTERNALS_FULLPATH_FMT}/lib/libfmt.so"
+)
+target_include_directories(
+	irods_cap_indexing_common_obj
+	PUBLIC
+	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+	PRIVATE
+	"${IRODS_EXTERNALS_FULLPATH_BOOST}/include"
+	"${IRODS_EXTERNALS_FULLPATH_FMT}/include"
+)
+target_compile_definitions(
+	irods_cap_indexing_common_obj
+	PUBLIC
+	BOOST_SYSTEM_NO_DEPRECATED
+	RODS_SERVER
+	ENABLE_RE
+	PRIVATE
+	${IRODS_COMPILE_DEFINITIONS}
+	${IRODS_COMPILE_DEFINITIONS_PRIVATE}
+)

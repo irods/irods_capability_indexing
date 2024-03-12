@@ -1,6 +1,6 @@
-#include "configuration.hpp"
+#include "irods/private/indexing/configuration.hpp"
 
-#include "plugin_specific_configuration.hpp"
+#include "irods/private/indexing/plugin_specific_configuration.hpp"
 
 #include <irods/rodsLog.h>
 #include <irods/irods_log.hpp>

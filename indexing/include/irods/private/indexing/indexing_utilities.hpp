@@ -1,7 +1,7 @@
 #ifndef IRODS_CAPABILITY_INDEXING_INDEXING_UTILITIES_HPP
 #define IRODS_CAPABILITY_INDEXING_INDEXING_UTILITIES_HPP
 
-#include "configuration.hpp"
+#include "irods/private/indexing/configuration.hpp"
 
 #include <irods/irods_re_structs.hpp>
 #include <irods/rcMisc.h>
