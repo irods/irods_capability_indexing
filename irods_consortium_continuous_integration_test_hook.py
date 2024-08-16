@@ -162,8 +162,6 @@ def main():
     if options.do_setup:
         install_build_prerequisites()
 
-        irods_python_ci_utilities.subprocess_get_output(['sudo', '-EH', 'python3', '-m', 'pip', 'install', 'unittest-xml-reporting==1.14.0'])
-
         install_indexing_engine(options.indexing_engine)
 
         # Packages are put either in top level or os-specific subdirectory.
