@@ -15,8 +15,8 @@ def add_cmake_to_front_of_path():
 
 def install_building_dependencies(externals_directory):
     externals_list = [
-        'irods-externals-boost1.81.0-1',
-        'irods-externals-clang13.0.1-0',
+        'irods-externals-boost1.81.0-2',
+        'irods-externals-clang16.0.6-0',
         'irods-externals-cmake3.21.4-0',
         'irods-externals-json3.10.4-0'
     ]
