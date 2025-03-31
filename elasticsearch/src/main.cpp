@@ -7,6 +7,7 @@
 #include <irods/irods_log.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
+#include <irods/irods_server_properties.hpp>
 #include <irods/rodsErrorTable.h>
 #include <irods/rsModAVUMetadata.hpp>
 
@@ -154,7 +155,7 @@ namespace
 			// This lambda encapsulates the HTTP logic that's independent of the type of stream.
 			const auto construct_and_send_http_request = [_verb, _target, _body](auto& _stream) {
 				http::request<http::string_body> req{_verb, _target, 11};
-				req.set(http::field::host, boost::asio::ip::host_name());
+				req.set(http::field::host, irods::get_server_property<std::string>(irods::KW_CFG_HOST));
 				req.set(http::field::user_agent, "iRODS Indexing Plugin/" IRODS_PLUGIN_VERSION);
 				req.set(http::field::content_type, "application/json");
 
@@ -656,7 +657,7 @@ namespace
 		}
 	} // invoke_purge_event_metadata
 
-	irods::error start(irods::default_re_ctx&, const std::string& _instance_name)
+	irods::error setup(irods::default_re_ctx&, const std::string& _instance_name)
 	{
 		RuleExistsHelper::Instance()->registerRuleRegex("irods_policy_.*");
 
@@ -676,6 +677,16 @@ namespace
 		metadata_purge_policy =
 			irods::indexing::policy::compose_policy_name(irods::indexing::policy::metadata::purge, "elasticsearch");
 
+		return SUCCESS();
+	}
+
+	irods::error teardown(irods::default_re_ctx&, const std::string&)
+	{
+		return SUCCESS();
+	}
+
+	irods::error start(irods::default_re_ctx&, const std::string&)
+	{
 		return SUCCESS();
 	}
 
@@ -866,18 +877,30 @@ extern "C" irods::pluggable_rule_engine<irods::default_re_ctx>* plugin_factory(c
 {
 	irods::pluggable_rule_engine<irods::default_re_ctx>* re =
 		new irods::pluggable_rule_engine<irods::default_re_ctx>(_inst_name, _context);
+
+	re->add_operation<irods::default_re_ctx&, const std::string&>(
+		"setup", std::function<irods::error(irods::default_re_ctx&, const std::string&)>(setup));
+
+	re->add_operation<irods::default_re_ctx&, const std::string&>(
+		"teardown", std::function<irods::error(irods::default_re_ctx&, const std::string&)>(teardown));
+
 	re->add_operation<irods::default_re_ctx&, const std::string&>(
 		"start", std::function<irods::error(irods::default_re_ctx&, const std::string&)>(start));
+
 	re->add_operation<irods::default_re_ctx&, const std::string&>(
 		"stop", std::function<irods::error(irods::default_re_ctx&, const std::string&)>(stop));
+
 	re->add_operation<irods::default_re_ctx&, const std::string&, bool&>(
 		"rule_exists", std::function<irods::error(irods::default_re_ctx&, const std::string&, bool&)>(rule_exists));
+
 	re->add_operation<irods::default_re_ctx&, std::vector<std::string>&>(
 		"list_rules", std::function<irods::error(irods::default_re_ctx&, std::vector<std::string>&)>(list_rules));
+
 	re->add_operation<irods::default_re_ctx&, const std::string&, std::list<boost::any>&, irods::callback>(
 		"exec_rule",
 		std::function<irods::error(
 			irods::default_re_ctx&, const std::string&, std::list<boost::any>&, irods::callback)>(exec_rule));
+
 	re->add_operation<irods::default_re_ctx&, const std::string&, msParamArray_t*, const std::string&, irods::callback>(
 		"exec_rule_text",
 		std::function<irods::error(
@@ -888,5 +911,6 @@ extern "C" irods::pluggable_rule_engine<irods::default_re_ctx>* plugin_factory(c
 		"exec_rule_expression",
 		std::function<irods::error(irods::default_re_ctx&, const std::string&, msParamArray_t*, irods::callback)>(
 			exec_rule_expression));
+
 	return re;
 } // plugin_factory
