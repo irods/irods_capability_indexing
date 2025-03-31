@@ -7,6 +7,7 @@
 #include <irods/irods_log.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
+#include <irods/irods_server_properties.hpp>
 #include <irods/rodsErrorTable.h>
 #include <irods/rsModAVUMetadata.hpp>
 
@@ -154,7 +155,7 @@ namespace
 			// This lambda encapsulates the HTTP logic that's independent of the type of stream.
 			const auto construct_and_send_http_request = [_verb, _target, _body](auto& _stream) {
 				http::request<http::string_body> req{_verb, _target, 11};
-				req.set(http::field::host, boost::asio::ip::host_name());
+				req.set(http::field::host, irods::get_server_property<std::string>(irods::KW_CFG_HOST));
 				req.set(http::field::user_agent, "iRODS Indexing Plugin/" IRODS_PLUGIN_VERSION);
 				req.set(http::field::content_type, "application/json");
 
