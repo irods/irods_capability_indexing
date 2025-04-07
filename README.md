@@ -4,9 +4,6 @@
 
 The iRODS indexing capability provides a policy framework around both full text and metadata indexing for the purposes of enhanced data discovery. Logical collections are annotated with metadata which indicates that any data objects or nested collections of data object should be indexed given a particular indexing technology, index type and index name.
 
-> [!IMPORTANT]
-> This project supports elasticsearch 7.0.0 and later. As a result, the document-type rule engine plugin _(i.e. irods-rule-engine-plugin-document-type)_ is now obsolete and has been removed. Users upgrading to 4.3.1 will need to remove all references to the document-type rule engine plugin from their server_config.json file. Failing to do so may result in server errors and/or servers not being able to service client requests.
-
 ## Build Dependencies
 
 - iRODS development package
