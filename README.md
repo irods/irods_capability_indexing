@@ -4,7 +4,8 @@
 
 The iRODS indexing capability provides a policy framework around both full text and metadata indexing for the purposes of enhanced data discovery. Logical collections are annotated with metadata which indicates that any data objects or nested collections of data object should be indexed given a particular indexing technology, index type and index name.
 
-**IMPORTANT: This project supports elasticsearch 7.0.0 and later. As a result, the document-type rule engine plugin _(i.e. irods-rule-engine-plugin-document-type)_ is now obsolete and has been removed. Users upgrading to 4.3.1 will need to remove all references to the document-type rule engine plugin from their server_config.json file. Failing to do so may result in server errors and/or servers not being able to service client requests.**
+> [!IMPORTANT]
+> This project supports elasticsearch 7.0.0 and later. As a result, the document-type rule engine plugin _(i.e. irods-rule-engine-plugin-document-type)_ is now obsolete and has been removed. Users upgrading to 4.3.1 will need to remove all references to the document-type rule engine plugin from their server_config.json file. Failing to do so may result in server errors and/or servers not being able to service client requests.
 
 ## Build Dependencies
 
@@ -52,7 +53,8 @@ By default, should no resource be tagged it is assumed that all resources are av
 
 To enable the Indexing capability, prepend the following plugin configuration to the list of rule engines in `/etc/irods/server_config.json`. Plugin-specific configuration options are explained below.
 
-**IMPORTANT: The comments in the JSON structure are for explanatory purposes and must not be included in your configuration. Failing to follow this requirement will result in the server failing to stand up.**
+> [!IMPORTANT]
+> The comments in the JSON structure are for explanatory purposes and must not be included in your configuration. Failing to follow this requirement will result in the server failing to stand up.
 
 ```js
 "rule_engines": [
@@ -119,6 +121,8 @@ To enable the Indexing capability, prepend the following plugin configuration to
 ```
 
 Currently, due to 32-bit limitations on many architectures, integer-type parameters should not exceed a value of INT_MAX = 2^31 - 1 = 2147483647 or the results may be undefined.
+
+Modifications to the plugin configuration will require a reload or restart of the server to take effect.
 
 ## Policy Implementation
 
