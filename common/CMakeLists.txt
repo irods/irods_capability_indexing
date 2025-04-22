@@ -11,10 +11,10 @@ target_link_libraries(
 	irods_common
 	irods_server
 	nlohmann_json::nlohmann_json
+	fmt::fmt
 	PRIVATE
 	"${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_system.so"
 	"${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so"
-	"${IRODS_EXTERNALS_FULLPATH_FMT}/lib/libfmt.so"
 )
 target_include_directories(
 	irods_cap_indexing_common_obj
@@ -22,7 +22,6 @@ target_include_directories(
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
 	PRIVATE
 	"${IRODS_EXTERNALS_FULLPATH_BOOST}/include"
-	"${IRODS_EXTERNALS_FULLPATH_FMT}/include"
 )
 target_compile_definitions(
 	irods_cap_indexing_common_obj

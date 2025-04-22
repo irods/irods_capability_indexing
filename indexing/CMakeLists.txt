@@ -23,16 +23,15 @@ target_link_libraries(
 	irods_common
 	irods_server
 	nlohmann_json::nlohmann_json
+	fmt::fmt
 	"${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_system.so"
 	"${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_regex.so"
-	"${IRODS_EXTERNALS_FULLPATH_FMT}/lib/libfmt.so"
 )
 target_include_directories(
 	"${IRODS_PLUGIN_TARGET_NAME}"
 	PRIVATE
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
 	"${IRODS_EXTERNALS_FULLPATH_BOOST}/include"
-	"${IRODS_EXTERNALS_FULLPATH_FMT}/include"
 )
 target_compile_definitions(
 	"${IRODS_PLUGIN_TARGET_NAME}"

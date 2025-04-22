@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12.0 FATAL_ERROR)
 
-set(IRODS_MINIMUM_VERSION "4.3.2")
+set(IRODS_MINIMUM_VERSION "4.90.0")
 find_package(IRODS "${IRODS_MINIMUM_VERSION}" REQUIRED)
 set(IRODS_PLUGIN_REVISION "0")
 set(IRODS_PLUGIN_VERSION "${IRODS_MINIMUM_VERSION}.${IRODS_PLUGIN_REVISION}")
@@ -44,6 +44,7 @@ endif()
 find_package(Threads REQUIRED)
 find_package(nlohmann_json "3.6.1" REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(fmt "8.1.1" REQUIRED)
 
 add_subdirectory(common)
 add_subdirectory(indexing)
