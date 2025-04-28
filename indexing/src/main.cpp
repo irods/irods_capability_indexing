@@ -847,8 +847,8 @@ namespace
 			}
 #if 0
 			// catalog / index drift correction
-			if(irods::indexing::schedule::indexing ==
-			   rule_obj["rule-engine-operation"]) {
+			const std::string& re_operation = rule_obj["rule-engine-operation"].get_ref<const std::string&>();
+			if(irods::indexing::schedule::indexing == re_operation) {
 				ruleExecInfo_t* rei{};
 				const auto err = _eff_hdlr("unsafe_ms_ctx", &rei);
 				if(!err.ok()) {
@@ -901,11 +901,12 @@ namespace
 		}
 
 		try {
-			const auto rule_obj = json::parse(_rule_text);
-			if (irods::indexing::policy::object::index == rule_obj["rule-engine-operation"]) {
+			const json rule_obj = json::parse(_rule_text);
+			const std::string& re_operation = rule_obj["rule-engine-operation"].get_ref<const std::string&>();
+			if (irods::indexing::policy::object::index == re_operation) {
 				try {
 					// proxy for provided user name
-					const std::string& user_name = rule_obj["user-name"];
+					const std::string& user_name = rule_obj["user-name"].get_ref<const std::string&>();
 					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 					// - implement (full-text?) indexing on an individual object
@@ -913,21 +914,21 @@ namespace
 					// -
 					apply_object_policy(rei,
 					                    irods::indexing::policy::object::index,
-					                    rule_obj["object-path"],
-					                    rule_obj["source-resource"],
-					                    rule_obj["indexer"],
-					                    rule_obj["index-name"],
-					                    rule_obj["index-type"]);
+					                    rule_obj["object-path"].get_ref<const std::string&>(),
+					                    rule_obj["source-resource"].get_ref<const std::string&>(),
+					                    rule_obj["indexer"].get_ref<const std::string&>(),
+					                    rule_obj["index-name"].get_ref<const std::string&>(),
+					                    rule_obj["index-type"].get_ref<const std::string&>());
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
 					return ERROR(_e.code(), _e.what());
 				}
 			}
-			else if (irods::indexing::policy::object::purge == rule_obj["rule-engine-operation"]) {
+			else if (irods::indexing::policy::object::purge == re_operation) {
 				try {
 					// proxy for provided user name
-					const std::string& user_name = rule_obj["user-name"];
+					const std::string& user_name = rule_obj["user-name"].get_ref<const std::string&>();
 					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 					// - implement index purge on an individual object
@@ -935,92 +936,92 @@ namespace
 					// -
 					apply_object_policy(rei,
 					                    irods::indexing::policy::object::purge,
-					                    rule_obj["object-path"],
-					                    rule_obj["source-resource"],
-					                    rule_obj["indexer"],
-					                    rule_obj["index-name"],
-					                    rule_obj["index-type"]);
+					                    rule_obj["object-path"].get_ref<const std::string&>(),
+					                    rule_obj["source-resource"].get_ref<const std::string&>(),
+					                    rule_obj["indexer"].get_ref<const std::string&>(),
+					                    rule_obj["index-name"].get_ref<const std::string&>(),
+					                    rule_obj["index-type"].get_ref<const std::string&>());
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
 					return ERROR(_e.code(), _e.what());
 				}
 			}
-			else if (irods::indexing::policy::collection::index == rule_obj["rule-engine-operation"]) {
+			else if (irods::indexing::policy::collection::index == re_operation) {
 				// - launch delayed task to handle indexing events under a collection
 				// -   ( example : a new indexing AVU was placed on the collection )
 				// -
 				irods::indexing::indexer idx{rei, config->instance_name};
 				idx.schedule_policy_events_for_collection(irods::indexing::operation_type::index,
-				                                          rule_obj["collection-name"],
-				                                          rule_obj["user-name"],
-				                                          rule_obj["indexer"],
-				                                          rule_obj["index-name"],
-				                                          rule_obj["index-type"]);
+				                                          rule_obj["collection-name"].get_ref<const std::string&>(),
+				                                          rule_obj["user-name"].get_ref<const std::string&>(),
+				                                          rule_obj["indexer"].get_ref<const std::string&>(),
+				                                          rule_obj["index-name"].get_ref<const std::string&>(),
+				                                          rule_obj["index-type"].get_ref<const std::string&>());
 			}
-			else if (irods::indexing::policy::collection::purge == rule_obj["rule-engine-operation"]) {
+			else if (irods::indexing::policy::collection::purge == re_operation) {
 				// - launch delayed task to handle indexing events under a collection
 				// -   ( example : an indexing AVU was removed from the collection )
 				// -
 				irods::indexing::indexer idx{rei, config->instance_name};
 				idx.schedule_policy_events_for_collection(irods::indexing::operation_type::purge,
-				                                          rule_obj["collection-name"],
-				                                          rule_obj["user-name"],
-				                                          rule_obj["indexer"],
-				                                          rule_obj["index-name"],
-				                                          rule_obj["index-type"]);
+				                                          rule_obj["collection-name"].get_ref<const std::string&>(),
+				                                          rule_obj["user-name"].get_ref<const std::string&>(),
+				                                          rule_obj["indexer"].get_ref<const std::string&>(),
+				                                          rule_obj["index-name"].get_ref<const std::string&>(),
+				                                          rule_obj["index-type"].get_ref<const std::string&>());
 			}
-			else if (irods::indexing::policy::metadata::index == rule_obj["rule-engine-operation"]) {
+			else if (irods::indexing::policy::metadata::index == re_operation) {
 				try {
 					// proxy for provided user name
-					const std::string& user_name = rule_obj["user-name"];
+					const std::string& user_name = rule_obj["user-name"].get_ref<const std::string&>();
 					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 					apply_metadata_policy(rei,
 					                      irods::indexing::policy::metadata::index,
-					                      rule_obj["object-path"],
-					                      rule_obj["indexer"],
-					                      rule_obj["index-name"],
-					                      rule_obj["attribute"],
-					                      rule_obj["value"],
-					                      rule_obj["units"]);
+					                      rule_obj["object-path"].get_ref<const std::string&>(),
+					                      rule_obj["indexer"].get_ref<const std::string&>(),
+					                      rule_obj["index-name"].get_ref<const std::string&>(),
+					                      rule_obj["attribute"].get_ref<const std::string&>(),
+					                      rule_obj["value"].get_ref<const std::string&>(),
+					                      rule_obj["units"].get_ref<const std::string&>());
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
 					return ERROR(_e.code(), _e.what());
 				}
 			}
-			else if (irods::indexing::policy::metadata::purge == rule_obj["rule-engine-operation"]) {
+			else if (irods::indexing::policy::metadata::purge == re_operation) {
 				try {
 					// proxy for provided user name
-					const std::string& user_name = rule_obj["user-name"];
+					const std::string& user_name = rule_obj["user-name"].get_ref<const std::string&>();
 					rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 					apply_metadata_policy(rei,
 					                      irods::indexing::policy::metadata::purge,
-					                      rule_obj["object-path"],
-					                      rule_obj["indexer"],
-					                      rule_obj["index-name"],
-					                      rule_obj["attribute"],
-					                      rule_obj["value"],
-					                      rule_obj["units"]);
+					                      rule_obj["object-path"].get_ref<const std::string&>(),
+					                      rule_obj["indexer"].get_ref<const std::string&>(),
+					                      rule_obj["index-name"].get_ref<const std::string&>(),
+					                      rule_obj["attribute"].get_ref<const std::string&>(),
+					                      rule_obj["value"].get_ref<const std::string&>(),
+					                      rule_obj["units"].get_ref<const std::string&>());
 				}
 				catch (const irods::exception& _e) {
 					printErrorStack(&rei->rsComm->rError);
 					return ERROR(_e.code(), _e.what());
 				}
 			}
-			else if ("irods_policy_recursive_rm_object_by_path" == rule_obj["rule-engine-operation"]) {
-				const std::string& user_name = rule_obj["user-name"];
+			else if ("irods_policy_recursive_rm_object_by_path" == re_operation) {
+				const std::string& user_name = rule_obj["user-name"].get_ref<const std::string&>();
 				rstrcpy(rei->rsComm->clientUser.userName, user_name.c_str(), NAME_LEN);
 
 				apply_specific_policy(rei,
 				                      "irods_policy_recursive_rm_object_by_path",
-				                      rule_obj["object-path"],
-				                      rule_obj["source-resource"],
-				                      rule_obj["indexer"],
-				                      rule_obj["index-name"],
-				                      rule_obj["index-type"]);
+				                      rule_obj["object-path"].get_ref<const std::string&>(),
+				                      rule_obj["source-resource"].get_ref<const std::string&>(),
+				                      rule_obj["indexer"].get_ref<const std::string&>(),
+				                      rule_obj["index-name"].get_ref<const std::string&>(),
+				                      rule_obj["index-type"].get_ref<const std::string&>());
 			}
 			else {
 				printErrorStack(&rei->rsComm->rError);
