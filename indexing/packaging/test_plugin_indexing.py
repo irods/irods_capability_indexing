@@ -16,7 +16,6 @@ import unittest
 
 from ..configuration import IrodsConfig
 from ..controller import IrodsController
-from .resource_suite import ResourceBase
 from ..test.command import assert_command
 from . import session
 from .. import test
@@ -367,7 +366,7 @@ def delete_metadata_index(index_name = DEFAULT_METADATA_INDEX, port = ELASTICSEA
 debugFileName = None # -- or for example: "/tmp/debug.txt"  # -- for logging debug
 
 
-class TestIndexingPlugin(ResourceBase, unittest.TestCase):
+class TestIndexingPlugin(session.make_sessions_mixin([('otherrods', 'rods')], [('alice', 'apass')]), unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -383,6 +382,8 @@ class TestIndexingPlugin(ResourceBase, unittest.TestCase):
 
     def setUp(self):
         super(TestIndexingPlugin, self).setUp()
+        self.admin = self.admin_sessions[0]
+        self.user = self.user_sessions[0]
 
     def tearDown(self):
         super(TestIndexingPlugin, self).tearDown()
