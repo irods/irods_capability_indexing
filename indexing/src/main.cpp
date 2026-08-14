@@ -1,6 +1,7 @@
 #include "irods/private/indexing/indexing_utilities.hpp"
 #include "irods/private/indexing/utilities.hpp"
 
+#include <irods/escape_utilities.hpp>
 #include <irods/irods_hierarchy_parser.hpp>
 #include <irods/irods_log.hpp>
 #include <irods/irods_re_plugin.hpp>
@@ -88,7 +89,7 @@ namespace
 			               fmt::format("select META_COLL_ATTR_VALUE where "
 			                           "META_COLL_ATTR_NAME = '{}' and COLL_NAME = '{}'",
 			                           config->index,
-			                           collection)};
+			                           irods::single_quotes_to_hex(collection))};
 			for (const auto& row : q) {
 				std::string index_name = std::get<0>(parse_indexer_string(row[0]));
 				indices.insert(index_name);
