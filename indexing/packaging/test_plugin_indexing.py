@@ -1020,5 +1020,11 @@ class TestIndexingPlugin(session.make_sessions_mixin([('otherrods', 'rods')], [(
         finally:
             IrodsController().reload_configuration()
 
+    def test_plugin_does_not_cause_irm_to_report_a_genquery_error_when_logical_path_contains_embedded_single_quotes__issue_184(self):
+        with indexing_plugin__installed():
+            collection = f"{self.user.session_collection}/Quote'Here"
+            self.user.assert_icommand(['imkdir', collection])
+            self.user.assert_icommand(['irm', '-rf', collection])
+
 if __name__ == '__main__':
     unittest.main()
