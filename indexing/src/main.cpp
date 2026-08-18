@@ -503,7 +503,7 @@ namespace
 			}
 		}
 		catch (const boost::bad_any_cast& _e) {
-			THROW(INVALID_ANY_CAST, fmt::format("function [{}] rule name [{}]", __FUNCTION__, _rn));
+			THROW(INVALID_ANY_CAST, fmt::format("function [{}] rule name [{}]", __func__, _rn));
 		}
 	} // apply_indexing_policy
 
@@ -1035,7 +1035,7 @@ namespace
 			        _e.what(),
 			        __FILE__,
 			        __LINE__,
-			        __FUNCTION__);
+			        __func__);
 			return CODE(RULE_ENGINE_CONTINUE);
 		}
 		catch (const std::invalid_argument& _e) {
