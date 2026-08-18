@@ -3,6 +3,7 @@
 #include "irods/private/indexing/cpp_json_kw.hpp"
 #include "irods/private/indexing/utilities.hpp"
 
+#include <irods/escape_utilities.hpp>
 #include <irods/irods_at_scope_exit.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_server_properties.hpp>
@@ -31,7 +32,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/any.hpp>
 #include <boost/exception/all.hpp>
-#include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/regex.hpp>
 
@@ -78,10 +78,10 @@ namespace irods::indexing
 	                                            const std::string& _units)
 	{
 		try {
-			std::string query_str{boost::str(
-				boost::format("SELECT META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE META_COLL_ATTR_NAME = '%s' "
-			                  "and COLL_NAME = '%s'") %
-				_attribute % _collection_name)};
+			std::string query_str = fmt::format("SELECT META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE "
+			                                    "META_COLL_ATTR_NAME = '{}' and COLL_NAME = '{}'",
+			                                    _attribute,
+			                                    irods::single_quotes_to_hex(_collection_name));
 			query<rsComm_t> qobj{rei_->rsComm, query_str, 1};
 
 			if (qobj.size() == 0) {
@@ -132,8 +132,10 @@ namespace irods::indexing
 			_delayExec(rule_obj.dump().c_str(), "", generate_delay_execution_parameters().c_str(), rei_);
 		if (delay_err < 0) {
 			THROW(delay_err,
-			      boost::format("queue collection indexing failed for [%s] indexer [%s] type [%s]") % _collection_name %
-			          _indexer % index_type);
+			      fmt::format("queue collection indexing failed for [{}] indexer [{}] type [{}]",
+			                  _collection_name,
+			                  _indexer,
+			                  index_type));
 		}
 
 		rodsLog(config_.log_level,
@@ -145,9 +147,8 @@ namespace irods::indexing
 
 	std::vector<std::string> indexer::get_indexing_resource_names()
 	{
-		std::string query_str{boost::str(
-			boost::format("SELECT RESC_NAME WHERE META_RESC_ATTR_NAME = '%s' AND META_RESC_ATTR_VALUE = 'true'") %
-			config_.index)};
+		const auto query_str = fmt::format(
+			"SELECT RESC_NAME WHERE META_RESC_ATTR_NAME = '{}' AND META_RESC_ATTR_VALUE = 'true'", config_.index);
 
 		query<rsComm_t> qobj{comm_, query_str};
 		std::vector<std::string> ret_val;
@@ -166,11 +167,12 @@ namespace irods::indexing
 		std::string coll_name = p.parent_path().string();
 		std::string data_name = p.filename().string();
 
-		std::string query_str{boost::str(boost::format("SELECT RESC_NAME WHERE DATA_NAME = '%s' AND COLL_NAME = '%s'") %
-		                                 data_name % coll_name)};
+		const auto query_str = fmt::format("SELECT RESC_NAME WHERE DATA_NAME = '{}' AND COLL_NAME = '{}'",
+		                                   irods::single_quotes_to_hex(data_name),
+		                                   irods::single_quotes_to_hex(coll_name));
 		query<rsComm_t> qobj{comm_, query_str, 1};
 		if (qobj.size() == 0) {
-			THROW(CAT_NO_ROWS_FOUND, boost::format("no resource names found for object [%s]") % _object_path);
+			THROW(CAT_NO_ROWS_FOUND, fmt::format("no resource names found for object [{}]", _object_path));
 		}
 
 		if (_resource_names.empty()) {
@@ -185,8 +187,7 @@ namespace irods::indexing
 			}
 		}
 
-		THROW(
-			SYS_INVALID_INPUT_PARAM, boost::format("failed to find indexing resource for object [%s]") % _object_path);
+		THROW(SYS_INVALID_INPUT_PARAM, fmt::format("failed to find indexing resource for object [{}]", _object_path));
 
 	} // get_indexing_resource_name_for_object
 
@@ -285,7 +286,7 @@ namespace irods::indexing
 
 		struct query_failed : public std::runtime_error
 		{
-			query_failed(const std::string& e = "Query failed to fetch # of jobs active")
+			query_failed(const std::string& e = "Query failed to fetch number of jobs active")
 				: std::runtime_error{e}
 			{
 			}
@@ -548,14 +549,15 @@ namespace irods::indexing
 		std::string coll_name = p.parent_path().string();
 		std::string data_name = p.filename().string();
 
-		std::string query_str{boost::str(boost::format("SELECT META_DATA_ATTR_VALUE WHERE META_DATA_ATTR_NAME = "
-		                                               "'%s' and DATA_NAME = '%s' AND COLL_NAME = '%s'") %
-		                                 _meta_attr_name % data_name % coll_name)};
+		const auto query_str = fmt::format(
+			"SELECT META_DATA_ATTR_VALUE WHERE META_DATA_ATTR_NAME = '{}' and DATA_NAME = '{}' AND COLL_NAME = '{}'",
+			_meta_attr_name,
+			irods::single_quotes_to_hex(data_name),
+			irods::single_quotes_to_hex(coll_name));
 		query<rsComm_t> qobj{comm_, query_str, 1};
 		if (qobj.size() == 0) {
-			THROW(
-				CAT_NO_ROWS_FOUND,
-				boost::format("no results found for object [%s] with attribute [%s]") % _object_path % _meta_attr_name);
+			THROW(CAT_NO_ROWS_FOUND,
+			      fmt::format("no results found for object [{}] with attribute [{}]", _object_path, _meta_attr_name));
 		}
 
 		_value = qobj.front()[0];
@@ -565,14 +567,15 @@ namespace irods::indexing
 	indexer::metadata_results indexer::get_metadata_for_collection(const std::string& _collection,
 	                                                               const std::string& _meta_attr_name)
 	{
-		std::string query_str{boost::str(boost::format("SELECT META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE "
-		                                               "META_COLL_ATTR_NAME = '%s' and COLL_NAME = '%s'") %
-		                                 _meta_attr_name % _collection)};
+		const auto query_str = fmt::format(
+			"SELECT META_COLL_ATTR_VALUE, META_COLL_ATTR_UNITS WHERE META_COLL_ATTR_NAME = '{}' and COLL_NAME = '{}'",
+			_meta_attr_name,
+			irods::single_quotes_to_hex(_collection));
 		query<rsComm_t> qobj{comm_, query_str};
 		if (qobj.size() == 0) {
-			THROW(CAT_NO_ROWS_FOUND,
-			      boost::format("no results found for collection [%s] with attribute [%s]") % _collection %
-			          _meta_attr_name);
+			THROW(
+				CAT_NO_ROWS_FOUND,
+				fmt::format("no results found for collection [{}] with attribute [{}]", _collection, _meta_attr_name));
 		}
 
 		metadata_results ret_val;
@@ -620,8 +623,10 @@ namespace irods::indexing
 		const auto delay_err = _delayExec(rule_obj.dump().c_str(), "", _data_movement_params.c_str(), rei_);
 		if (delay_err < 0) {
 			THROW(delay_err,
-			      boost::format("queue indexing event failed for object [%s] indexer [%s] type [%s]") % _object_path %
-			          _indexer % _index_type);
+			      fmt::format("queue indexing event failed for object [{}] indexer [{}] type [{}]",
+			                  _object_path,
+			                  _indexer,
+			                  _index_type));
 		}
 
 		rodsLog(config_.log_level,

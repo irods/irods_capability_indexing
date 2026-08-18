@@ -471,9 +471,9 @@ namespace
 				auto query_str = fmt::format(
 					"SELECT META_{0}_ATTR_NAME, META_{0}_ATTR_VALUE, META_{0}_ATTR_UNITS where {0}_NAME = '{1}'",
 					(obj_type == "collection" ? "COLL" : "DATA"),
-					(obj_type == "collection" ? obj_path : dobj_name));
+					irods::single_quotes_to_hex(obj_type == "collection" ? obj_path : dobj_name));
 				if (obj_type != "collection") {
-					query_str += fmt::format(" and COLL_NAME = '{}'", dobj_parent);
+					query_str += fmt::format(" and COLL_NAME = '{}'", irods::single_quotes_to_hex(dobj_parent));
 				}
 
 				irods::query<rsComm_t> qobj{_rei->rsComm, query_str};
@@ -503,7 +503,7 @@ namespace
 			}
 		}
 		catch (const boost::bad_any_cast& _e) {
-			THROW(INVALID_ANY_CAST, boost::str(boost::format("function [%s] rule name [%s]") % __FUNCTION__ % _rn));
+			THROW(INVALID_ANY_CAST, fmt::format("function [{}] rule name [{}]", __FUNCTION__, _rn));
 		}
 	} // apply_indexing_policy
 
@@ -674,8 +674,8 @@ namespace
 			query_str = fmt::format(
 				"SELECT DATA_ID , DATA_MODIFY_TIME, DATA_ZONE_NAME, COLL_NAME, DATA_SIZE where DATA_NAME = '{0}'"
 				" and COLL_NAME = '{1}' ",
-				name,
-				parent_name);
+				irods::single_quotes_to_hex(name),
+				irods::single_quotes_to_hex(parent_name));
 			irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
 			for (const auto& i : qobj) {
 				obj["lastModifiedDate"] = std::stol(i[1]); // epoch seconds
@@ -691,8 +691,8 @@ namespace
 			query_str = fmt::format(
 				"SELECT COLL_ID , COLL_MODIFY_TIME, COLL_ZONE_NAME, COLL_PARENT_NAME where COLL_NAME = '{0}'"
 				" and COLL_PARENT_NAME = '{1}' ",
-				_obj_path,
-				parent_name);
+				irods::single_quotes_to_hex(_obj_path),
+				irods::single_quotes_to_hex(parent_name));
 			irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
 			for (const auto& i : qobj) {
 				obj["lastModifiedDate"] = std::stol(i[1]); // epoch seconds

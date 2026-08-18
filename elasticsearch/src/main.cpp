@@ -2,6 +2,7 @@
 #include "irods/private/indexing/plugin_specific_configuration.hpp"
 #include "irods/private/indexing/utilities.hpp"
 
+#include <irods/escape_utilities.hpp>
 #include <irods/MD5Strategy.hpp>
 #include <irods/irods_hasher_factory.hpp>
 #include <irods/irods_log.hpp>
@@ -23,7 +24,6 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/any.hpp>
-#include <boost/format.hpp>
 
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/ostream_iterator.hpp>
@@ -298,23 +298,25 @@ namespace
 			if (iscoll) {
 				*iscoll = true;
 			}
-			query_str = fmt::format("SELECT COLL_ID WHERE COLL_NAME = '{}'", _object_path);
+			query_str = fmt::format("SELECT COLL_ID WHERE COLL_NAME = '{}'", irods::single_quotes_to_hex(_object_path));
 		}
 		else {
 			if (iscoll) {
 				*iscoll = false;
 			}
-			query_str = fmt::format("SELECT DATA_ID WHERE COLL_NAME = '{}' AND DATA_NAME = '{}'", coll_name, data_name);
+			query_str = fmt::format("SELECT DATA_ID WHERE COLL_NAME = '{}' AND DATA_NAME = '{}'",
+			                        irods::single_quotes_to_hex(coll_name),
+			                        irods::single_quotes_to_hex(data_name));
 		}
 		try {
 			irods::query<rsComm_t> qobj{_rei->rsComm, query_str, 1};
 			if (qobj.size() > 0) {
 				return qobj.front()[0];
 			}
-			THROW(CAT_NO_ROWS_FOUND, boost::format("failed to get object id for [%s]") % _object_path);
+			THROW(CAT_NO_ROWS_FOUND, fmt::format("failed to get object id for [{}]", _object_path));
 		}
 		catch (const irods::exception& _e) {
-			THROW(CAT_NO_ROWS_FOUND, boost::format("failed to get object id for [%s]") % _object_path);
+			THROW(CAT_NO_ROWS_FOUND, fmt::format("failed to get object id for [{}]", _object_path));
 		}
 
 	} // get_object_index_id
@@ -359,7 +361,7 @@ namespace
 
 		auto status = rsModAVUMetadata(_rei->rsComm, &set_op);
 		if (status < 0) {
-			THROW(status, boost::format("failed to update object [%s] metadata") % _object_path);
+			THROW(status, fmt::format("failed to update object [{}] metadata", _object_path));
 		}
 	} // update_object_metadata
 
