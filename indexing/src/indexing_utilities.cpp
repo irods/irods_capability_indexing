@@ -286,7 +286,7 @@ namespace irods::indexing
 
 		struct query_failed : public std::runtime_error
 		{
-			query_failed(const std::string& e = "Query failed to fetch number of jobs active")
+			explicit query_failed(const std::string& e = "Query failed to fetch number of jobs active")
 				: std::runtime_error{e}
 			{
 			}
@@ -294,7 +294,8 @@ namespace irods::indexing
 
 		struct job_limit_precision : public std::runtime_error
 		{
-			job_limit_precision(const std::string& e = "Job Limits may not exceed 32-bit unsigned integer precision")
+			explicit job_limit_precision(
+				const std::string& e = "Job Limits may not exceed 32-bit unsigned integer precision")
 				: std::runtime_error{e}
 			{
 			}
